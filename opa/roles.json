@@ -1,0 +1,8 @@
+{
+  "roles": {
+    "anonymous": ["GET:/heath"],
+    "viewer": ["GET:/documents/(qa|development)/.*", "GET:/status"],
+    "editor": ["GET:/documents.*", "POST:/documents$"],
+    "admin": ["(GET|POST|PUT|DELETE|HEAD):/.*"]
+  }
+}

@@ -6,7 +6,7 @@ import (
 )
 
 type Entry struct {
-	Path   string `json:"path,omitempty"`
+	Path   string `json:"path,omitempty" swaggerignore:"true"`
 	Key    string `json:"key" example:"development/service/var-example"`
 	Value  string `json:"value" example:"value 123"`
 	Secure bool   `json:"secure" example:"false"`

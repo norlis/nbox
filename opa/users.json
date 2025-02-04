@@ -1,0 +1,8 @@
+{
+  "users": {
+    "alice": "viewer",
+    "bob": "editor",
+    "nvm": "admin",
+    "juan": ""
+  }
+}

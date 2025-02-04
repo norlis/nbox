@@ -1,0 +1,12 @@
+{
+  "roles": {
+    "viewer": ["GET:/documents"],
+    "editor": ["GET:/documents", "POST:/documents"],
+    "admin": ["GET:/documents", "POST:/documents", "DELETE:/documents"]
+  },
+  "users": {
+    "alice": "viewer",
+    "bob": "editor",
+    "carol": "admin"
+  }
+}

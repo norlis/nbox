@@ -1,0 +1,50 @@
+{
+  "admin": {
+    "permissions": [
+      {
+        "method": "GET",
+        "path": "/users"
+      },
+      {
+        "method": "POST",
+        "path": "/users"
+      },
+      {
+        "method": "DELETE",
+        "path": "/users"
+      },
+      {
+        "method": "GET",
+        "path": "/admin"
+      }
+    ]
+  },
+  "editor": {
+    "permissions": [
+      {
+        "method": "GET",
+        "path": "/users"
+      },
+      {
+        "method": "POST",
+        "path": "/articles"
+      },
+      {
+        "method": "PUT",
+        "path": "/articles"
+      }
+    ]
+  },
+  "viewer": {
+    "permissions": [
+      {
+        "method": "GET",
+        "path": "/users"
+      },
+      {
+        "method": "GET",
+        "path": "/articles"
+      }
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+services:
+  nbox:
+    url: "http://localhost:8181/v1/data/httpapi/authz"
+
+default_decision: "/httpapi/authz/allow"
