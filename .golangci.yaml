@@ -23,13 +23,12 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(proteccion.co.com/apolo)
       skip-generated: true
       custom-order: true
 
     gofumpt:
       extra-rules: true
-      module-path: proteccion.co.com/apolo/per_fin_cba
+#      module-path: ..
 
 # === LINTERS ===
 linters:
