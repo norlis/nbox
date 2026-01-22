@@ -4,18 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"nbox/internal/domain"
 	"nbox/internal/domain/models"
-	"strings"
 )
 
 type BoxUseCase struct {
 	templateAdapter domain.TemplateAdapter
-	entryAdapter    domain.EntryAdapter
+	entryAdapter    domain.EntryManager
 	pathUseCase     *PathUseCase
 }
 
-func NewBox(boxOperation domain.TemplateAdapter, entryOperations domain.EntryAdapter, pathUseCase *PathUseCase) *BoxUseCase {
+func NewBox(boxOperation domain.TemplateAdapter, entryOperations domain.EntryManager, pathUseCase *PathUseCase) *BoxUseCase {
 	return &BoxUseCase{
 		templateAdapter: boxOperation,
 		entryAdapter:    entryOperations,
@@ -23,14 +24,14 @@ func NewBox(boxOperation domain.TemplateAdapter, entryOperations domain.EntryAda
 	}
 }
 
-func (b *BoxUseCase) BuildBox(ctx context.Context, service string, stage string, template string, args map[string]string) (string, error) {
+func (b *BoxUseCase) BuildBox(ctx context.Context, service, stage, template string, args map[string]string) (string, error) {
 	var schemaEnum models.SchemaType
 
 	schema, _ := schemaEnum.GetSchemaFromFilename(template)
 
 	box, err := b.templateAdapter.RetrieveBox(ctx, service, stage, template)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to retrieve box: %w", err)
 	}
 
 	tmpl := b.VarsBuilder(string(box), service, stage, template, args)
@@ -55,7 +56,7 @@ func (b *BoxUseCase) BuildBox(ctx context.Context, service string, stage string,
 func (b *BoxUseCase) transformBySchema(schemeType models.SchemaType, value string) string {
 	switch schemeType {
 	case models.JSON:
-		//return strings.ReplaceAll(value, `"`, `\"`)
+		// return strings.ReplaceAll(value, `"`, `\"`)
 		escaped, err := json.Marshal(value)
 		if err != nil {
 			return ""
@@ -66,8 +67,7 @@ func (b *BoxUseCase) transformBySchema(schemeType models.SchemaType, value strin
 	}
 }
 
-func (b *BoxUseCase) VarsBuilder(tmpl string, service string, stage string, template string, args map[string]string) string {
-
+func (b *BoxUseCase) VarsBuilder(tmpl, service, stage, template string, args map[string]string) string {
 	oldnew := []string{
 		":service", service,
 		":stage", stage,
@@ -75,13 +75,13 @@ func (b *BoxUseCase) VarsBuilder(tmpl string, service string, stage string, temp
 	}
 
 	for k, v := range args {
-		oldnew = append(oldnew, fmt.Sprintf(":%s", strings.TrimSpace(k)), v)
+		oldnew = append(oldnew, ":"+strings.TrimSpace(k), v)
 	}
 
 	return strings.NewReplacer(oldnew...).Replace(tmpl)
 }
 
-func (b *BoxUseCase) ListVars(ctx context.Context, service string, stage string, template string) []string {
+func (b *BoxUseCase) ListVars(ctx context.Context, service, stage, template string) []string {
 	box, err := b.templateAdapter.RetrieveBox(ctx, service, stage, template)
 	if err != nil {
 		return []string{}

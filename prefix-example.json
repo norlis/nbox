@@ -1,0 +1,62 @@
+[
+  {
+    "prefix": "global",
+    "typeDefault": "dynamodb",
+    "typeSecure": "parameterstore_secure",
+    "typeAllowed": ["parameterstore", "parameterstore_secure"]
+  },
+  {
+    "prefix": "development",
+    "typeDefault": "dynamodb",
+    "typeSecure": "parameterstore_secure",
+    "typeAllowed": ["parameterstore", "parameterstore_secure"]
+  },
+  {
+    "prefix": "qa",
+    "typeDefault": "dynamodb",
+    "typeSecure": "parameterstore_secure",
+    "typeAllowed": ["parameterstore", "parameterstore_secure"]
+  },
+  {
+    "prefix": "beta",
+    "typeDefault": "dynamodb",
+    "typeSecure": "parameterstore_secure",
+    "typeAllowed": ["parameterstore", "parameterstore_secure"]
+  },
+  {
+    "prefix": "sandbox",
+    "typeDefault": "dynamodb",
+    "typeSecure": "parameterstore_secure",
+    "typeAllowed": ["parameterstore", "parameterstore_secure"]
+  },
+  {
+    "prefix": "production",
+    "typeDefault": "dynamodb",
+    "typeSecure": "parameterstore_secure",
+    "typeAllowed": ["parameterstore", "parameterstore_secure"]
+  },
+  {
+    "prefix": "global/serverless",
+    "typeDefault": "parameterstore",
+    "typeSecure": "parameterstore_secure",
+    "typeAllowed": ["parameterstore_secure"]
+  },
+  {
+    "prefix": "production/serverless",
+    "typeDefault": "parameterstore",
+    "typeSecure": "parameterstore_secure",
+    "typeAllowed": ["parameterstore_secure"]
+  },
+  {
+    "prefix": "development/serverless",
+    "typeDefault": "parameterstore",
+    "typeSecure": "parameterstore_secure",
+    "typeAllowed": ["parameterstore_secure"]
+  },
+  {
+    "prefix": "passbox",
+    "typeDefault": "parameterstore_secure",
+    "typeSecure": "parameterstore_secure",
+    "typeAllowed": []
+  }
+]

@@ -3,28 +3,25 @@ package domain
 import (
 	"context"
 	"encoding/json"
+	"nbox/internal/domain/backend"
+
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
 )
-
-//var (
-//	ErrUpsertSecret = errors.New("error al guardar el secreto en Parameter Store")
-//	ErrAddTags      = errors.New("error al añadir etiquetas al recurso de Parameter Store")
-//)
 
 type EntryUseCase interface {
 	Upsert(ctx context.Context, entries []models.Entry) []operations.Result
 }
 
-// TemplateAdapter store templates
+// TemplateAdapter store templates.
 type TemplateAdapter interface {
 	UpsertBox(ctx context.Context, box *models.Box) []string
-	BoxExists(ctx context.Context, service string, stage string, template string) (bool, error)
-	RetrieveBox(ctx context.Context, service string, stage string, template string) ([]byte, error)
+	BoxExists(ctx context.Context, service, stage, template string) (bool, error)
+	RetrieveBox(ctx context.Context, service, stage, template string) ([]byte, error)
 	List(ctx context.Context) ([]models.Box, error)
 }
 
-// EntryAdapter vars backend operations
+// EntryAdapter vars backend operations.
 type EntryAdapter interface {
 	Upsert(ctx context.Context, entries []models.Entry) operations.Results
 	Retrieve(ctx context.Context, key string) (*models.Entry, error)
@@ -33,7 +30,9 @@ type EntryAdapter interface {
 	Tracking(ctx context.Context, key string) ([]models.Tracking, error)
 }
 
-// SecretAdapter vars encrypt
+//type
+
+// SecretAdapter vars encrypt.
 type SecretAdapter interface {
 	Upsert(ctx context.Context, entries []models.Entry) operations.Results
 	RetrieveSecretValue(ctx context.Context, key string) (*models.Entry, error)
@@ -45,7 +44,7 @@ type EventNotifier interface {
 
 type WebhookRepository interface {
 	FindByEventType(ctx context.Context, eventType EventType) ([]Webhook, error)
-	// TODO
+	// TODO: Add implementations
 	// Create(ctx context.Context, webhook Webhook) error
 	// Delete(ctx context.Context, webhookID string) error
 }
@@ -56,4 +55,10 @@ type EventPublisher interface {
 
 type ExportAdapter interface {
 	Export(ctx context.Context, entries []models.Entry, options models.ExportOptions) ([]byte, error)
+}
+
+type PrefixConfigRepository interface {
+	List(ctx context.Context) ([]backend.PrefixConfig, error)
+	GetByPrefix(ctx context.Context, prefix string) (*backend.PrefixConfig, error)
+	Upsert(ctx context.Context, prefixes []backend.PrefixConfig) (backend.UpsertStats, error)
 }

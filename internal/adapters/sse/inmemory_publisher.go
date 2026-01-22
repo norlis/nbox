@@ -3,9 +3,10 @@ package sse
 import (
 	"context"
 	"encoding/json"
-	"nbox/internal/domain"
+	"fmt"
 
 	"go.uber.org/zap"
+	"nbox/internal/domain"
 )
 
 // InMemoryEventPublisher envía eventos directamente al broker en memoria.
@@ -25,7 +26,7 @@ func (p *InMemoryEventPublisher) Publish(ctx context.Context, event domain.Event
 	payloadBytes, err := json.Marshal(event)
 	if err != nil {
 		p.logger.Error("ErrBrokerEventEncode", zap.Error(err))
-		return err
+		return fmt.Errorf("failed to marshal event payload: %w", err)
 	}
 
 	message := Message{

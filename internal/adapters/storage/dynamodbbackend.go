@@ -64,11 +64,73 @@ func NewDynamoDBBackend(
 	}
 }
 
+func (d *DynamoDBBackend) BackendType() backend.StorageBackendType {
+	return backend.BackendDynamoDB
+}
+
+func (d *DynamoDBBackend) RetrieveMany(ctx context.Context, keys []string) (map[string]*models.Entry, error) {
+	if len(keys) == 0 {
+		return make(map[string]*models.Entry), nil
+	}
+
+	attributes := make([]map[string]types.AttributeValue, 0, len(keys))
+
+	for _, fullKey := range keys {
+		// Usamos tu pathUseCase para separar "carpeta/variable" en "carpeta" y "variable"
+		path, err := attributevalue.Marshal(d.pathUseCase.PathWithoutKey(fullKey))
+		if err != nil {
+			d.logger.Error("Failed to marshal path", zap.String("key", fullKey), zap.Error(err))
+			continue
+		}
+
+		key, err := attributevalue.Marshal(d.pathUseCase.BaseKey(fullKey))
+		if err != nil {
+			d.logger.Error("Failed to marshal key", zap.String("key", fullKey), zap.Error(err))
+			continue
+		}
+
+		attributes = append(attributes, map[string]types.AttributeValue{
+			"Path": path,
+			"Key":  key,
+		})
+	}
+	items, err := d.dynamodbKit.BatchGet(ctx, d.config.EntryTableName, attributes)
+	if err != nil {
+		// Si falla el batch completo (después de reintentos), retornamos error.
+		// El Gateway decidirá si degradar el servicio o fallar.
+		return nil, fmt.Errorf("retrieve many failed: %w", err)
+	}
+
+	results := make(map[string]*models.Entry)
+
+	for _, item := range items {
+		var record Record
+		if err := attributevalue.UnmarshalMap(item, &record); err != nil {
+			d.logger.Error("Failed to unmarshal record", zap.Any("item", item), zap.Error(err))
+			continue
+		}
+
+		fullKey := d.pathUseCase.Concat(record.Path, record.Key)
+
+		results[fullKey] = &models.Entry{
+			Key:      fullKey,
+			Value:    string(record.Value),
+			Secure:   record.Metadata.Secure,
+			Metadata: &record.Metadata,
+		}
+	}
+
+	return results, nil
+}
+
 // Upsert inserta o actualiza entradas en DynamoDB.
 // Solo se preocupa por el estado ACTUAL. El tracking se maneja externamente.
 func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) operations.Results {
 	results := make(operations.Results, len(entries))
-	requests := make([]types.WriteRequest, 0, len(entries))
+
+	uniqueRequests := make(map[string]types.WriteRequest)
+
+	//requests := make([]types.WriteRequest, 0, len(entries))
 
 	updatedBy := "ghost"
 	if user, ok := application.UserFromContext(ctx); ok {
@@ -76,12 +138,8 @@ func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) op
 	}
 	now := time.Now().UTC()
 
-	// 1. MARSHAL & PREPARACIÓN (Fix #2: No silenciar errores)
 	for _, entry := range entries {
 		sanitizedKey := d.sanitize(entry.Key)
-
-		// Asumimos éxito por defecto (Pending)
-		results.Add(sanitizedKey, operations.Updated, nil)
 
 		path := d.pathUseCase.PathWithoutKey(sanitizedKey)
 		key := d.pathUseCase.BaseKey(sanitizedKey)
@@ -102,6 +160,7 @@ func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) op
 					Secure:         entry.Secure,
 					Action:         "upsert",
 					StorageBackend: storageType,
+					Hash:           entry.Metadata.Hash,
 				},
 			},
 		}
@@ -115,9 +174,46 @@ func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) op
 			continue
 		}
 
-		requests = append(requests, types.WriteRequest{
+		uniqueRequests[fmt.Sprintf("%s/%s", path, key)] = types.WriteRequest{
 			PutRequest: &types.PutRequest{Item: item},
-		})
+		}
+
+		// Asumimos éxito por defecto (Pending)
+		//results.Add(sanitizedKey, operations.Updated, nil)
+		results.AddWithOutput(sanitizedKey, operations.Updated, nil, &entry)
+
+		for _, prefix := range d.pathUseCase.Prefixes(sanitizedKey) {
+			parentPath := d.pathUseCase.PathWithoutKey(prefix)
+			parentKey := d.pathUseCase.BaseKey(prefix) + "/"
+			parentRecordKey := fmt.Sprintf("%s%s", parentPath, parentKey)
+
+			if _, exists := uniqueRequests[parentRecordKey]; !exists {
+				parentRecord := Record{
+					Path: parentPath,
+					RecordBase: &RecordBase{
+						Key: parentKey,
+						Metadata: models.Metadata{
+							UpdatedAt: now,
+							UpdatedBy: updatedBy,
+						},
+					},
+				}
+				pItem, parentErr := attributevalue.MarshalMap(parentRecord)
+				if parentErr != nil {
+					continue
+				}
+				uniqueRequests[parentRecordKey] = types.WriteRequest{
+					PutRequest: &types.PutRequest{Item: pItem},
+				}
+			}
+
+		}
+
+	}
+
+	requests := make([]types.WriteRequest, 0, len(uniqueRequests))
+	for _, req := range uniqueRequests {
+		requests = append(requests, req)
 	}
 
 	if len(requests) == 0 {
@@ -129,7 +225,6 @@ func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) op
 	if len(failedItems) > 0 {
 		// Solo marcamos como fallidos los que retornó dynamodbKit.BatchWrite
 		// El resto se queda con el estado "Updated" que pusimos al inicio (optimistic success)
-
 		commonErr := err
 		if commonErr == nil {
 			commonErr = errors.New("write operation failed after retries")
@@ -144,12 +239,12 @@ func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) op
 	return results
 }
 
-func (d *DynamoDBBackend) Resolve(ctx context.Context, key string) ([]byte, error) {
+func (d *DynamoDBBackend) Resolve(ctx context.Context, key string) (*models.Entry, error) {
 	entry, err := d.Retrieve(ctx, key)
 	if err != nil || entry == nil {
 		return nil, err
 	}
-	return []byte(entry.Value), nil
+	return entry, nil
 }
 
 func (d *DynamoDBBackend) Retrieve(ctx context.Context, key string, _ ...domain.RetrieveOption) (*models.Entry, error) {
@@ -324,12 +419,6 @@ func (d *DynamoDBBackend) Delete(ctx context.Context, key string) error {
 func mustMarshal(v string) types.AttributeValue {
 	av, _ := attributevalue.Marshal(v)
 	return av
-}
-
-// Tracking ahora devuelve error de no implementado.
-// Esta responsabilidad se moverá a un Decorator u Observer.
-func (d *DynamoDBBackend) Tracking(ctx context.Context, key string) ([]models.Tracking, error) {
-	return nil, errors.New("tracking is not implemented in core dynamodb backend")
 }
 
 // Helpers privados

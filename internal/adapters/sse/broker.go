@@ -8,11 +8,10 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/fx"
-
 	"go.uber.org/zap"
 )
 
-// Message es la estructura que se pasa por los canales internos y se envía a los clientes.
+// Message es la estructura que se pasa por los canales internos y se envía a los clients.
 type Message struct {
 	Name    string
 	Payload []byte
@@ -24,7 +23,7 @@ type client struct {
 	channel chan Message
 }
 
-// EventBroker gestiona los clientes conectados y la difusión de eventos.
+// EventBroker gestiona los clients conectados y la difusión de eventos.
 type EventBroker struct {
 	logger      *zap.Logger
 	clients     map[string]chan Message // Clave: ClientID
@@ -82,7 +81,7 @@ func (b *EventBroker) listen(ctx context.Context) {
 			b.logger.Info("SSE client disconnected", zap.String("clientId", c.id))
 		case event := <-b.events:
 			b.mu.Lock()
-			// Iteramos sobre los clientes y usamos un envío no bloqueante.
+			// Iteramos sobre los clients y usamos un envío no bloqueante.
 			for id, c := range b.clients {
 				select {
 				case c <- event:

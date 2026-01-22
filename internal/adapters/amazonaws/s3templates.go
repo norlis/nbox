@@ -5,10 +5,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
-	"nbox/internal/application"
-	"nbox/internal/domain"
-	"nbox/internal/domain/models"
 	"path"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -17,6 +15,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"go.uber.org/zap"
+	"nbox/internal/application"
+	"nbox/internal/domain"
+	"nbox/internal/domain/models"
 )
 
 type s3TemplateStore struct {
@@ -32,57 +33,62 @@ type BoxRecord struct {
 	Template models.Template `dynamodbav:"Template"`
 }
 
-func NewS3TemplateStore(s3 *s3.Client, config *application.Config, dynamodb *dynamodb.Client, logger *zap.Logger) domain.TemplateAdapter {
+func NewS3TemplateStore(s3Client *s3.Client, config *application.Config, dynamodbClient *dynamodb.Client, logger *zap.Logger) domain.TemplateAdapter {
 	return &s3TemplateStore{
-		s3:             s3,
-		dynamodbClient: dynamodb,
+		s3:             s3Client,
+		dynamodbClient: dynamodbClient,
 		config:         config,
 		logger:         logger,
 	}
 }
 
-func (b *s3TemplateStore) store(ctx context.Context, path string, stage models.Stage) (*s3.PutObjectOutput, error) {
+func (b *s3TemplateStore) store(ctx context.Context, objectPath string, stage models.Stage) (*s3.PutObjectOutput, error) {
 	var out bytes.Buffer
 
 	decoded, err := base64.StdEncoding.DecodeString(stage.Template.Value)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode base64 content: %w", err)
 	}
 
 	err = json.Indent(&out, decoded, "", "  ")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to format JSON: %w", err)
 	}
 
-	return b.s3.PutObject(ctx, &s3.PutObjectInput{
+	result, err := b.s3.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(b.config.BucketName),
-		Key:    aws.String(path),
+		Key:    aws.String(objectPath),
 		Body:   bytes.NewReader(out.Bytes()),
 	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to put object to S3: %w", err)
+	}
+	return result, nil
 }
 
-func (b *s3TemplateStore) BoxExists(ctx context.Context, service string, stage string, template string) (bool, error) {
-	//path := fmt.Sprintf("%s/%s/%s", service, stage, template)
+func (b *s3TemplateStore) BoxExists(ctx context.Context, service, stage, template string) (bool, error) {
+	// path := fmt.Sprintf("%s/%s/%s", service, stage, template)
 	s3path := path.Join(service, stage, template)
 
 	_, err := b.s3.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(b.config.BucketName),
 		Key:    aws.String(s3path),
 	})
-
-	return err == nil, err
+	if err != nil {
+		return false, fmt.Errorf("failed to check S3 object existence: %w", err)
+	}
+	return true, nil
 }
 
-func (b *s3TemplateStore) RetrieveBox(ctx context.Context, service string, stage string, template string) ([]byte, error) {
-	//path := fmt.Sprintf("%s/%s/%s", service, stage, template)
+func (b *s3TemplateStore) RetrieveBox(ctx context.Context, service, stage, template string) ([]byte, error) {
+	// path := fmt.Sprintf("%s/%s/%s", service, stage, template)
 	s3path := path.Join(service, stage, template)
 	object, err := b.s3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(b.config.BucketName),
 		Key:    aws.String(s3path),
 	})
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get object from S3: %w", err)
 	}
 
 	defer func(Body io.ReadCloser) {
@@ -90,9 +96,8 @@ func (b *s3TemplateStore) RetrieveBox(ctx context.Context, service string, stage
 	}(object.Body)
 
 	body, err := io.ReadAll(object.Body)
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read S3 object body: %w", err)
 	}
 
 	return body, nil
@@ -104,13 +109,12 @@ func (b *s3TemplateStore) UpsertBox(ctx context.Context, box *models.Box) []stri
 
 	for stageName, stage := range box.Stage {
 		name := stage.Template.Name
-		//path := fmt.Sprintf("%s/%s/%s", box.Service, stageName, stage.Template.Name)
+		// path := fmt.Sprintf("%s/%s/%s", box.Service, stageName, stage.Template.Name)
 		s3path := path.Join(box.Service, stageName, stage.Template.Name)
 
 		stage.Template.Name = s3path
 		box.Stage[stageName] = stage
 		_, err := b.store(ctx, s3path, stage)
-
 		if err != nil {
 			b.logger.Error("ErrStoreTemplate", zap.String("path", s3path), zap.Error(err))
 		}
@@ -127,7 +131,6 @@ func (b *s3TemplateStore) UpsertBox(ctx context.Context, box *models.Box) []stri
 			_, err = b.dynamodbClient.PutItem(context.TODO(), &dynamodb.PutItemInput{
 				TableName: aws.String(b.config.BoxTableName), Item: item,
 			})
-
 			if err != nil {
 				b.logger.Warn("ErrDbStoreTemplate", zap.String("path", s3path), zap.Error(err))
 			}
@@ -148,9 +151,8 @@ func (b *s3TemplateStore) List(ctx context.Context) ([]models.Box, error) {
 		TableName:              aws.String(b.config.BoxTableName),
 		ReturnConsumedCapacity: types.ReturnConsumedCapacityTotal,
 	})
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to scan DynamoDB table: %w", err)
 	}
 
 	for _, i := range scan.Items {

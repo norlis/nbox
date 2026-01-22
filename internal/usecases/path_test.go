@@ -1,12 +1,13 @@
 package usecases
 
 import (
-	"fmt"
 	"reflect"
 	"testing"
 )
 
 func TestPathUseCase_Prefixes(t *testing.T) {
+	t.Parallel()
+
 	useCase := NewPathUseCase()
 
 	results := useCase.Prefixes("namespace/env/name")
@@ -17,6 +18,8 @@ func TestPathUseCase_Prefixes(t *testing.T) {
 }
 
 func TestPathUseCase_PathWithoutKey(t *testing.T) {
+	t.Parallel()
+
 	useCase := NewPathUseCase()
 
 	result := useCase.PathWithoutKey("namespace/env/name")
@@ -27,6 +30,8 @@ func TestPathUseCase_PathWithoutKey(t *testing.T) {
 }
 
 func TestPathUseCase_BaseKey(t *testing.T) {
+	t.Parallel()
+
 	useCase := NewPathUseCase()
 
 	result := useCase.BaseKey("namespace/env/name")
@@ -37,13 +42,15 @@ func TestPathUseCase_BaseKey(t *testing.T) {
 }
 
 func TestPathUseCase(t *testing.T) {
+	t.Parallel()
+
 	useCase := NewPathUseCase()
 
-	var results [][]string
+	results := make([][]string, 0, 2)
 
 	for _, prefix := range useCase.Prefixes("namespace/env/name") {
 		path := useCase.PathWithoutKey(prefix)
-		key := fmt.Sprintf("%s/", useCase.BaseKey(prefix))
+		key := useCase.BaseKey(prefix) + "/"
 
 		results = append(results, []string{path, key})
 	}

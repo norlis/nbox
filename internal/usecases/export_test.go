@@ -1,15 +1,17 @@
 package usecases
 
 import (
-	"nbox/internal/domain/models"
-	exporter2 "nbox/internal/usecases/exporter"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"nbox/internal/domain/models"
+	exporter2 "nbox/internal/usecases/exporter"
 )
 
 func TestJSONExporter_Export(t *testing.T) {
+	t.Parallel()
+
 	exporter := exporter2.NewJSONExporter()
 
 	entries := []models.Entry{
@@ -26,6 +28,8 @@ func TestJSONExporter_Export(t *testing.T) {
 }
 
 func TestYAMLExporter_Export(t *testing.T) {
+	t.Parallel()
+
 	exporter := exporter2.NewYAMLExporter()
 
 	entries := []models.Entry{
@@ -40,6 +44,8 @@ func TestYAMLExporter_Export(t *testing.T) {
 }
 
 func TestDotEnvExporter_Export(t *testing.T) {
+	t.Parallel()
+
 	exporter := exporter2.NewDotEnvExporter()
 
 	entries := []models.Entry{
@@ -65,6 +71,8 @@ func TestDotEnvExporter_Export(t *testing.T) {
 // through TestDotEnvExporter_Export which covers the complete export flow
 
 func TestExportOptions_Validate(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		options models.ExportOptions
@@ -95,6 +103,7 @@ func TestExportOptions_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := tt.options.Validate()
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -106,6 +115,8 @@ func TestExportOptions_Validate(t *testing.T) {
 }
 
 func TestExportFormat_ContentType(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		format      models.ExportFormat
 		contentType string
@@ -117,6 +128,7 @@ func TestExportFormat_ContentType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(string(tt.format), func(t *testing.T) {
+			t.Parallel()
 			result := tt.format.ContentType()
 			assert.Equal(t, tt.contentType, result)
 		})
@@ -124,6 +136,8 @@ func TestExportFormat_ContentType(t *testing.T) {
 }
 
 func TestExportFormat_FileExtension(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		format    models.ExportFormat
 		extension string
@@ -135,6 +149,7 @@ func TestExportFormat_FileExtension(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(string(tt.format), func(t *testing.T) {
+			t.Parallel()
 			result := tt.format.FileExtension()
 			assert.Equal(t, tt.extension, result)
 		})

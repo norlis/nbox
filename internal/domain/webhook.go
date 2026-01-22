@@ -1,7 +1,7 @@
 package domain
 
 type Webhook struct {
-	ID     string      `json:"id" dynamodbav:"ID"`
-	URL    string      `json:"url" dynamodbav:"URL"`
-	Events []EventType `json:"events" dynamodbav:"Events"` // Lista de eventos a los que está suscrito
+	ID     string      `dynamodbav:"ID"     json:"id"`
+	URL    string      `dynamodbav:"URL"    json:"url"`
+	Events []EventType `dynamodbav:"Events" json:"events"` // Lista de eventos a los que está suscrito
 }

@@ -4,16 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"nbox/internal/application"
-	"nbox/internal/domain"
 	"net/http"
 	"os"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	"go.uber.org/zap"
+	"nbox/internal/application"
+	"nbox/internal/domain"
 )
 
-type AuthenticationMiddleware interface{}
+type AuthenticationMiddleware any
 
 type Authn struct {
 	credentials map[string]string

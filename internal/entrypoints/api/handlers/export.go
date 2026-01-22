@@ -1,23 +1,24 @@
 package handlers
 
 import (
-	"fmt"
-	"nbox/internal/domain/models"
-	"nbox/internal/usecases"
+	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	"go.uber.org/zap"
+	"nbox/internal/domain/models"
+	"nbox/internal/usecases"
 )
 
-// ExportHandler maneja las peticiones de exportación
+// ExportHandler maneja las peticiones de exportación.
 type ExportHandler struct {
 	exportUseCase *usecases.ExportUseCase
 	render        presenters.Presenters
 	logger        *zap.Logger
 }
 
-// NewExportHandler crea una nueva instancia
+// NewExportHandler crea una nueva instancia.
 func NewExportHandler(
 	exportUseCase *usecases.ExportUseCase,
 	render presenters.Presenters,
@@ -51,7 +52,7 @@ func NewExportHandler(
 // @Failure      403 {object} problem.ProblemDetail "Forbidden - Insufficient permissions"
 // @Failure      404 {object} problem.ProblemDetail "No entries found with specified prefix"
 // @Failure      500 {object} problem.ProblemDetail "Internal server error"
-// @Router       /api/entry/export [get]
+// @Router       /api/entry/export [get].
 func (h *ExportHandler) Export(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -60,7 +61,7 @@ func (h *ExportHandler) Export(w http.ResponseWriter, r *http.Request) {
 	if prefix == "" {
 		h.logger.Warn("Export request without prefix")
 		h.render.Error(w, r,
-			fmt.Errorf("prefix parameter is required"),
+			errors.New("prefix parameter is required"),
 			presenters.WithStatus(http.StatusBadRequest))
 		return
 	}
@@ -91,9 +92,9 @@ func (h *ExportHandler) Export(w http.ResponseWriter, r *http.Request) {
 	filename := h.exportUseCase.GetFilename(format, prefix)
 
 	w.Header().Set("Content-Type", h.exportUseCase.GetContentType(format))
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
-	w.Header().Set("X-Export-Count", fmt.Sprintf("%d", len(result.Entries)))
-	w.Header().Set("X-Export-Size", fmt.Sprintf("%d", result.Size))
+	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
+	w.Header().Set("X-Export-Count", strconv.Itoa(len(result.Entries)))
+	w.Header().Set("X-Export-Size", strconv.FormatInt(result.Size, 10))
 
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(result.Content); err != nil {

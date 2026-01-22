@@ -4,6 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"nbox/internal/adapters/storage"
+	"os"
+
 	"nbox/internal/adapters/amazonaws"
 	"nbox/internal/adapters/persistence"
 	"nbox/internal/adapters/sse"
@@ -14,15 +17,12 @@ import (
 	"nbox/internal/entrypoints/httpapi"
 	"nbox/internal/usecases"
 	"nbox/pkg/logger"
-	"os"
-
-	"go.uber.org/fx/fxevent"
-
-	"go.uber.org/zap"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	status "github.com/norlis/httpgate/pkg/application/health"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
+	"go.uber.org/zap"
 )
 
 // banner
@@ -49,7 +49,6 @@ NNNNNNNN         NNNNNNNBBBBBBBBBBBBBBBBB        OOOOOOOOO     XXXXXXX       XXX
 `
 
 func main() {
-
 	fmt.Print(banner)
 
 	flag.StringVar(&application.Port, "port", "7337", "--port=7337")
@@ -73,8 +72,32 @@ func main() {
 
 		// Adapters
 		fx.Provide(amazonaws.NewS3TemplateStore),
-		fx.Provide(amazonaws.NewDynamodbBackend),
-		fx.Provide(amazonaws.NewSecureParameterStore),
+
+		// Adapters New v2
+		fx.Provide(storage.NewDynamodbKit),
+		fx.Provide(storage.NewDynamoPrefixConfigRepository),
+		fx.Provide(storage.NewDynamoDBTracking),
+
+		fx.Provide(storage.NewDynamoDBBackend),             // Backend DynamoDB (e Indice Global)
+		fx.Provide(storage.NewParameterStoreBackend),       // Backend SSM Standard
+		fx.Provide(storage.NewParameterStoreSecureBackend), // Backend SSM Secure
+
+		// gateway manager storages
+		fx.Provide(func(
+			l *zap.Logger,
+			pr domain.PrefixConfigRepository,
+			ddb *storage.DynamoDBBackend,
+			ssm *storage.ParameterStoreBackend,
+			ssmSec *storage.ParameterStoreSecureBackend,
+		) domain.EntryManager {
+			gw := storage.NewStorageGateway(ddb, pr, l)
+			gw.RegisterBackend(ddb)
+			gw.RegisterBackend(ssm)
+			gw.RegisterBackend(ssmSec)
+			return gw
+		}),
+		fx.Decorate(usecases.NewEntryManagerWithTracking),
+
 
 		// Handlers
 		fx.Provide(handlers.NewEntryHandler),
@@ -82,14 +105,17 @@ func main() {
 		fx.Provide(handlers.NewStaticHandler),
 		fx.Provide(handlers.NewUIHandler),
 		fx.Provide(handlers.NewExportHandler),
+		fx.Provide(handlers.NewPrefixConfigHandler),
+		fx.Provide(handlers.NewTrackHandler),
+
 
 		// Use case
 		fx.Provide(usecases.NewPathUseCase),
-		fx.Provide(usecases.NewEntryUseCase),
+		//fx.Provide(usecases.NewEntryUseCase),
 		fx.Provide(usecases.NewBox),
 		fx.Provide(usecases.NewExportUseCase),
 
-		fx.Decorate(usecases.NewEntryUseCaseWithEvents),
+		//fx.Decorate(usecases.NewEntryUseCaseWithEvents),
 		fx.Provide(usecases.NewEventUseCase),
 
 		// sse
@@ -126,5 +152,4 @@ func main() {
 	}
 
 	app.Run()
-
 }

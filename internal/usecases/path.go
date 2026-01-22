@@ -7,8 +7,7 @@ import (
 
 const EmptyPath = " "
 
-type PathUseCase struct {
-}
+type PathUseCase struct{}
 
 func NewPathUseCase() *PathUseCase {
 	return &PathUseCase{}
@@ -16,7 +15,7 @@ func NewPathUseCase() *PathUseCase {
 
 // Prefixes is a shared helper function returns all parent 'folders' for a
 // given vault key.
-// e.g. for 'foo/bar/baz', it returns ['foo', 'foo/bar']
+// e.g. for 'foo/bar/baz', it returns ['foo', 'foo/bar'].
 func (p *PathUseCase) Prefixes(s string) []string {
 	components := strings.Split(s, "/")
 	var result []string
@@ -66,10 +65,14 @@ func (p *PathUseCase) BaseKey(key string) string {
 // Concat vaultKey returns the vault key for a given record
 // from the DynamoDB table. This is the combination of
 // the records Path and Key.
-func (p *PathUseCase) Concat(path string, key string) string {
+func (p *PathUseCase) Concat(path, key string) string {
 	unp := p.UnescapeEmptyPath(path)
 	if unp == "" {
 		return key
 	}
 	return pkgPath.Join(path, key)
+}
+
+func (p *PathUseCase) NormalizeKey(key string) string {
+	return pkgPath.Join("/", strings.TrimSpace(key))
 }

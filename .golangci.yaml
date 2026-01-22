@@ -1,4 +1,3 @@
-# Configuración para golangci-lint v2.x
 # Documentación: https://golangci-lint.run/docs/configuration/file/
 version: "2"
 
@@ -11,7 +10,7 @@ run:
   build-tags:
     - integration
 
-# === FORMATTERS (Nueva sección en v2) ===
+
 formatters:
   enable:
     - gofmt
@@ -95,6 +94,9 @@ linters:
     # === Go modules y dependencias ===
     - gomoddirectives # Valida go.mod
     - depguard       # Control de imports
+
+    # === future
+    - modernize
 
   settings:
     # Complejidad ciclomática
@@ -206,6 +208,10 @@ linters:
       sort: true
 
   exclusions:
+    # Excluir directorios completos de todos los linters
+    paths:
+      - cmd/example
+
     rules:
       # Excluir tests de algunos linters
       - path: _test\.go

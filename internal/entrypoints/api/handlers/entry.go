@@ -3,24 +3,29 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"nbox/internal/domain"
 	"nbox/internal/domain/models"
 	"net/http"
-	"strings"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	_ "github.com/norlis/httpgate/pkg/kit/problem"
 )
 
 type EntryHandler struct {
-	entryAdapter  domain.EntryAdapter
-	entryUseCase  domain.EntryUseCase
-	secretAdapter domain.SecretAdapter
-	render        presenters.Presenters
+	//entryAdapter  domain.EntryAdapter
+	//entryUseCase  domain.EntryUseCase
+	//secretAdapter domain.SecretAdapter
+	store  domain.EntryManager
+	render presenters.Presenters
 }
 
-func NewEntryHandler(entryAdapter domain.EntryAdapter, secretAdapter domain.SecretAdapter, entryUseCase domain.EntryUseCase, render presenters.Presenters) *EntryHandler {
-	return &EntryHandler{entryAdapter: entryAdapter, secretAdapter: secretAdapter, entryUseCase: entryUseCase, render: render}
+//func NewEntryHandler(entryAdapter domain.EntryAdapter, secretAdapter domain.SecretAdapter, entryUseCase domain.EntryUseCase, render presenters.Presenters) *EntryHandler {
+//	return &EntryHandler{entryAdapter: entryAdapter, secretAdapter: secretAdapter, entryUseCase: entryUseCase, render: render}
+//}
+
+func NewEntryHandler(store domain.EntryManager, render presenters.Presenters) *EntryHandler {
+	return &EntryHandler{store: store, render: render}
 }
 
 // Upsert
@@ -36,7 +41,7 @@ func NewEntryHandler(entryAdapter domain.EntryAdapter, secretAdapter domain.Secr
 // @Failure 400 {object} problem.ProblemDetail "Bad Request"
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/entry [post]
+// @Router /api/entry [post].
 func (h *EntryHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var entries []models.Entry
@@ -46,7 +51,7 @@ func (h *EntryHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.render.JSON(w, r, h.entryUseCase.Upsert(ctx, entries))
+	h.render.JSON(w, r, h.store.Upsert(ctx, entries))
 }
 
 // ListByPrefix
@@ -60,12 +65,12 @@ func (h *EntryHandler) Upsert(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} []models.Entry ""
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/entry/prefix [get]
+// @Router /api/entry/prefix [get].
 func (h *EntryHandler) ListByPrefix(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	prefix := r.URL.Query().Get("v")
 
-	entries, err := h.entryAdapter.List(ctx, prefix)
+	entries, err := h.store.List(ctx, prefix)
 	if err != nil {
 		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
 		return
@@ -85,11 +90,11 @@ func (h *EntryHandler) ListByPrefix(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} models.Entry ""
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/entry/key [get]
+// @Router /api/entry/key [get].
 func (h *EntryHandler) GetByKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	key := r.URL.Query().Get("v")
-	entry, err := h.entryAdapter.Retrieve(ctx, key)
+	entry, err := h.store.Retrieve(ctx, key)
 	if err != nil {
 		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
 		return
@@ -109,11 +114,11 @@ func (h *EntryHandler) GetByKey(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} object{message=string} ""
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/entry/key [delete]
+// @Router /api/entry/key [delete].
 func (h *EntryHandler) DeleteKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	key := r.URL.Query().Get("v")
-	err := h.entryAdapter.Delete(ctx, key)
+	err := h.store.Delete(ctx, key)
 	if err != nil {
 		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
 		return
@@ -122,33 +127,8 @@ func (h *EntryHandler) DeleteKey(w http.ResponseWriter, r *http.Request) {
 	h.render.JSON(w, r, map[string]string{"message": "ok"})
 }
 
-// Tracking
-// @Summary History
-// @Description history changes
-// @Tags entry
-// @Produce json
-// @Param v query string true "key path"
-// @Security 	 BasicAuth
-// @Security 	 BearerAuth
-// @Success 200 {object} []models.Tracking ""
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/track/key [get]
-func (h *EntryHandler) Tracking(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	key := r.URL.Query().Get("v")
-
-	entries, err := h.entryAdapter.Tracking(ctx, key)
-	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
-		return
-	}
-
-	h.render.JSON(w, r, entries)
-}
-
-// RetrieveSecretValue
-// @Summary Retrieve secret value
+// Resolve
+// @Summary Resolve value
 // @Description plain value
 // @Tags entry
 // @Produce json
@@ -159,8 +139,8 @@ func (h *EntryHandler) Tracking(w http.ResponseWriter, r *http.Request) {
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 404 {object} problem.ProblemDetail "Not found"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/entry/secret-value [get]
-func (h *EntryHandler) RetrieveSecretValue(w http.ResponseWriter, r *http.Request) {
+// @Router /api/entry/resolve [get].
+func (h *EntryHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	key := r.URL.Query().Get("v")
 
@@ -169,11 +149,7 @@ func (h *EntryHandler) RetrieveSecretValue(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if !strings.HasPrefix(key, "/") {
-		key = "/" + key
-	}
-
-	entry, err := h.secretAdapter.RetrieveSecretValue(ctx, key)
+	entry, err := h.store.Resolve(ctx, key)
 	if err != nil {
 		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
 		return
@@ -185,4 +161,39 @@ func (h *EntryHandler) RetrieveSecretValue(w http.ResponseWriter, r *http.Reques
 	}
 
 	h.render.JSON(w, r, entry)
+}
+
+// RetrieveMany
+// @Summary Retrieve multiple entries
+// @Description Retrieve values and metadata for a list of keys in a single request.
+// @Tags Entries
+// @Accept json
+// @Produce json
+// @Param request body []string true "List of keys to retrieve"
+// @Security BasicAuth
+// @Security BearerAuth
+// @Success 200 {object} map[string]models.Entry
+// @Failure 400 {object} problem.ProblemDetail "Invalid request body"
+// @Failure 500 {object} problem.ProblemDetail "Internal server error"
+// @Router /api/entries/retrieve-many [post]
+func (h *EntryHandler) RetrieveMany(w http.ResponseWriter, r *http.Request) {
+	keys := make([]string, 0)
+
+	if err := json.NewDecoder(r.Body).Decode(&keys); err != nil {
+		h.render.Error(w, r, fmt.Errorf("invalid json body: %w", err), presenters.WithStatus(http.StatusBadRequest))
+		return
+	}
+
+	if len(keys) == 0 {
+		h.render.JSON(w, r, map[string]models.Entry{})
+		return
+	}
+
+	results, err := h.store.RetrieveMany(r.Context(), keys)
+	if err != nil {
+		h.render.Error(w, r, err, presenters.WithStatus(http.StatusInternalServerError))
+		return
+	}
+
+	h.render.JSON(w, r, results)
 }

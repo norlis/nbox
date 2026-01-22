@@ -1,7 +1,6 @@
 package application
 
 import (
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -10,11 +9,11 @@ import (
 type CredentialsSource string
 
 const (
-	// SourceEnvVar carga credenciales desde variable de entorno (desarrollo)
+	// SourceEnvVar carga credenciales desde variable de entorno (desarrollo).
 	SourceEnvVar CredentialsSource = "env"
-	// SourceSecretsManager carga credenciales desde AWS Secrets Manager (producción)
+	// SourceSecretsManager carga credenciales desde AWS Secrets Manager (producción).
 	SourceSecretsManager CredentialsSource = "secretsmanager"
-	// SourceFile carga credenciales desde archivo local (desarrollo/testing)
+	// SourceFile carga credenciales desde archivo local (desarrollo/testing).
 	SourceFile CredentialsSource = "file"
 )
 
@@ -30,6 +29,7 @@ type Config struct {
 	EntryTableName         string   `pkl:"entryTableName"`
 	TrackingEntryTableName string   `pkl:"trackingEntryTableName"`
 	BoxTableName           string   `pkl:"boxTableName"`
+	PrefixConfigTableName  string   `pkl:"prefixConfigTableName"`
 	RegionName             string   `pkl:"regionName"`
 	AccountId              string   `pkl:"accountId"`
 	ParameterStoreKeyId    string   `pkl:"parameterStoreKeyId"`
@@ -48,7 +48,7 @@ func NewConfigFromEnv() *Config {
 
 	defaultPrefix := env("NBOX_DEFAULT_PREFIX", "global")
 
-	prefixes = append(prefixes, fmt.Sprintf("%s/", defaultPrefix))
+	prefixes = append(prefixes, defaultPrefix+"/")
 
 	prefixes = append(
 		prefixes,
@@ -69,6 +69,7 @@ func NewConfigFromEnv() *Config {
 		EntryTableName:         env("NBOX_ENTRIES_TABLE_NAME", "nbox-entry-table"),
 		TrackingEntryTableName: env("NBOX_TRACKING_ENTRIES_TABLE_NAME", "nbox-tracking-entry-table"),
 		BoxTableName:           env("NBOX_BOX_TABLE_NAME", "nbox-box-table"),
+		PrefixConfigTableName:  env("NBOX_PREFIX_CONFIG_TABLE_NAME", "nbox-prefix-config-table"),
 		AccountId:              env("ACCOUNT_ID", ""),
 		RegionName:             env("AWS_REGION", "us-east-1"),
 		ParameterStoreKeyId:    env("NBOX_PARAMETER_STORE_KEY_ID", ""), // KMS KEY ID
@@ -80,11 +81,18 @@ func NewConfigFromEnv() *Config {
 	}
 }
 
-func env(key string, defaultValue string) string {
+func env(key, defaultValue string) string {
 	value, exists := os.LookupEnv(key)
-	if !exists || strings.TrimSpace(value) == "" {
+	if !exists {
 		return defaultValue
 	}
+
+	// Trim whitespace to prevent configuration errors
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return defaultValue
+	}
+
 	return value
 }
 

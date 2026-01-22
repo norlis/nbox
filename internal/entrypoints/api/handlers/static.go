@@ -1,10 +1,10 @@
 package handlers
 
 import (
-	"nbox/internal/application"
 	"net/http"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
+	"nbox/internal/application"
 )
 
 type StaticHandler struct {

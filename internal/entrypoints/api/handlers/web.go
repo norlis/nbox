@@ -3,11 +3,11 @@ package handlers
 import (
 	"html/template"
 	"io/fs"
-	"nbox/web"
 	"net/http"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"nbox/web"
 )
 
 type UIHandler struct {
@@ -18,7 +18,6 @@ type UIHandler struct {
 
 func NewUIHandler(logger *zap.Logger) *UIHandler {
 	tpl, err := template.ParseFS(web.Files, "assets/templates/events.html")
-
 	if err != nil {
 		logger.Error("ErrParseTemplate", zap.Error(err))
 		return nil
@@ -50,6 +49,7 @@ func (h *UIHandler) EventsPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error("Failed to execute events template", zap.Error(err))
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
 	}
 }
 

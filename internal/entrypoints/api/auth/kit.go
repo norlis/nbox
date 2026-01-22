@@ -21,8 +21,8 @@ var (
 // Devuelve el valor y un booleano 'true' si el esquema coincide.
 // Example: extractAuthValue("Bearer mi-token", "Bearer") -> ("mi-token", true)
 // Example: extractAuthValue("basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==", "Basic") -> ("QWxhZGRpbjpvcGVuIHNlc2FtZQ==", true)
-// Example: extractAuthValue("Token mi-token", "Bearer") -> ("", false)
-func extractAuthValue(authHeader string, scheme string) (string, bool) {
+// Example: extractAuthValue("Token mi-token", "Bearer") -> ("", false).
+func extractAuthValue(authHeader, scheme string) (string, bool) {
 	prefix := scheme + " "
 	prefixLen := len(prefix)
 

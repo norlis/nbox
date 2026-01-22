@@ -2,13 +2,13 @@ package handlers
 
 import (
 	"encoding/json"
-	"nbox/internal/domain"
-	"nbox/internal/domain/models"
-	"nbox/internal/usecases"
 	"net/http"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	_ "github.com/norlis/httpgate/pkg/kit/problem"
+	"nbox/internal/domain"
+	"nbox/internal/domain/models"
+	"nbox/internal/usecases"
 )
 
 type BoxHandler struct {
@@ -18,7 +18,7 @@ type BoxHandler struct {
 }
 
 type CommandBox struct {
-	ID      string     `json:"id" example:"123"`
+	ID      string     `example:"123"  json:"id"`
 	Payload models.Box `json:"payload"`
 }
 
@@ -39,7 +39,7 @@ func NewBoxHandler(store domain.TemplateAdapter, boxUseCase *usecases.BoxUseCase
 // @Failure 400 {object} problem.ProblemDetail "Bad Request"
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/box [post]
+// @Router /api/box [post].
 func (b *BoxHandler) UpsertBox(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -67,7 +67,7 @@ func (b *BoxHandler) UpsertBox(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object}  object{exit=bool} ""
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/box/{service}/{stage}/{template} [head]
+// @Router /api/box/{service}/{stage}/{template} [head].
 func (b *BoxHandler) Exist(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -97,7 +97,7 @@ func (b *BoxHandler) Exist(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object}  string ""
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/box/{service}/{stage}/{template} [get]
+// @Router /api/box/{service}/{stage}/{template} [get].
 func (b *BoxHandler) Retrieve(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -111,7 +111,7 @@ func (b *BoxHandler) Retrieve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//b.render.PlainText(w, r, data)
+	// b.render.PlainText(w, r, data)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write(data)
 }
@@ -129,7 +129,7 @@ func (b *BoxHandler) Retrieve(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object}  string ""
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/box/{service}/{stage}/{template}/build [get]
+// @Router /api/box/{service}/{stage}/{template}/build [get].
 func (b *BoxHandler) Build(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -167,7 +167,7 @@ func (b *BoxHandler) Build(w http.ResponseWriter, r *http.Request) {
 // @Failure 400 {object} problem.ProblemDetail "Bad Request"
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/box [get]
+// @Router /api/box [get].
 func (b *BoxHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	data, err := b.store.List(ctx)
@@ -192,7 +192,7 @@ func (b *BoxHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object}  []string ""
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/box/{service}/{stage}/{template}/vars [get]
+// @Router /api/box/{service}/{stage}/{template}/vars [get].
 func (b *BoxHandler) ListVars(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	service := r.PathValue("service")

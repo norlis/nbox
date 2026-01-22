@@ -28,9 +28,9 @@ func NewProcessor(tmpl string) *Processor {
 }
 
 func (p *Processor) populateVars() []string {
-	var vars []string
 	r := regexp.MustCompile(ExpressionDouble)
 	matches := r.FindAllStringSubmatch(p.tmpl, -1)
+	vars := make([]string, 0, len(matches))
 	for _, s := range matches {
 		vars = append(vars, s[1])
 	}
@@ -59,7 +59,7 @@ func (p *Processor) GetPrefixes() []string {
 }
 
 func (p *Processor) Replace(values map[string]string) string {
-	var oldnew []string
+	oldnew := make([]string, 0, len(p.vars)*2)
 	for _, v := range p.vars {
 		cleaned := strings.TrimSpace(v)
 		oldnew = append(oldnew, fmt.Sprintf(`{{%s}}`, v), values[cleaned])

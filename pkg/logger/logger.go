@@ -26,11 +26,10 @@ func (l LogLevel) AtomicLevel() zapcore.Level {
 }
 
 func NewLogger() *zap.Logger {
-
 	logLevel := LogLevel(os.Getenv("LOG_LEVEL"))
 
 	atomicLevel := zap.NewAtomicLevelAt(logLevel.AtomicLevel())
-	//var a fxevent.Logger
+	// var a fxevent.Logger
 	encoderCfg := zap.NewProductionEncoderConfig()
 	encoderCfg.TimeKey = "timestamp"
 	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
@@ -50,7 +49,7 @@ func NewLogger() *zap.Logger {
 		ErrorOutputPaths: []string{
 			"stderr",
 		},
-		InitialFields: map[string]interface{}{
+		InitialFields: map[string]any{
 			"pid": os.Getpid(),
 		},
 	}

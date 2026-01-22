@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"nbox/internal/application"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"nbox/internal/application"
 )
 
 var (
@@ -34,9 +34,8 @@ func (c *S3Checker) Check() error {
 	_, err := c.Client.HeadBucket(context.TODO(), &s3.HeadBucketInput{
 		Bucket: aws.String(bucketName),
 	})
-
 	if err != nil {
-		return fmt.Errorf("%w: %s -> %v", ErrS3BucketCheckFailed, bucketName, err)
+		return fmt.Errorf("%w: %s -> %w", ErrS3BucketCheckFailed, bucketName, err)
 	}
 	return nil
 }
@@ -62,9 +61,8 @@ func (c *DynamoDBChecker) Check() error {
 		_, err := c.Client.DescribeTable(context.TODO(), &dynamodb.DescribeTableInput{
 			TableName: aws.String(tableName),
 		})
-
 		if err != nil {
-			return fmt.Errorf("%w: %s -> %v", ErrDynamoDBTableCheckFailed, tableName, err)
+			return fmt.Errorf("%w: %s -> %w", ErrDynamoDBTableCheckFailed, tableName, err)
 		}
 	}
 	return nil
@@ -78,7 +76,7 @@ type SSMChecker struct {
 func (c *SSMChecker) Check() error {
 	_, err := c.Client.DescribeParameters(context.TODO(), &ssm.DescribeParametersInput{MaxResults: aws.Int32(1)})
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrSSMCheckFailed, err)
+		return fmt.Errorf("%w: %w", ErrSSMCheckFailed, err)
 	}
 	return nil
 }

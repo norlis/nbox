@@ -3,9 +3,9 @@ package usecases
 import (
 	"context"
 	"encoding/json"
-	"nbox/internal/domain"
 
 	"go.uber.org/zap"
+	"nbox/internal/domain"
 )
 
 type EventUseCase struct {
@@ -21,7 +21,6 @@ func NewEventUseCase(logger *zap.Logger, publisher domain.EventPublisher) domain
 }
 
 func (e *EventUseCase) Dispatch(ctx context.Context, event domain.Event[json.RawMessage]) {
-
 	go func() {
 		e.logger.Info("DispatchEvent",
 			zap.String("type", string(event.Type)),

@@ -2,10 +2,10 @@ package exporter
 
 import (
 	"fmt"
-	"nbox/internal/domain"
-	"nbox/internal/domain/models"
 
 	"gopkg.in/yaml.v3"
+	"nbox/internal/domain"
+	"nbox/internal/domain/models"
 )
 
 type YAMLExporter struct{}
@@ -26,7 +26,7 @@ func (e *YAMLExporter) Export(entries []models.Entry) ([]byte, error) {
 
 	data, err := yaml.Marshal(normalized)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidFileFormat, err)
+		return nil, fmt.Errorf("%w: %w", domain.ErrInvalidFileFormat, err)
 	}
 
 	return data, nil

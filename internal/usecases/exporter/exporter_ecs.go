@@ -3,6 +3,7 @@ package exporter
 import (
 	"encoding/json"
 	"fmt"
+
 	"nbox/internal/domain"
 	"nbox/internal/domain/models"
 )
@@ -23,7 +24,7 @@ type ECSSecret struct {
 	ValueFrom string `json:"valueFrom"`
 }
 
-// ECSTaskDefinition representa la estructura de salida
+// ECSTaskDefinition representa la estructura de salida.
 type ECSTaskDefinition struct {
 	Environment []ECSEnvironment `json:"environment,omitempty"`
 	Secrets     []ECSSecret      `json:"secrets,omitempty"`
@@ -53,7 +54,7 @@ func (e *ECSTaskDefExporter) Export(entries []models.Entry) ([]byte, error) {
 
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidFileFormat, err)
+		return nil, fmt.Errorf("%w: %w", domain.ErrInvalidFileFormat, err)
 	}
 
 	return data, nil

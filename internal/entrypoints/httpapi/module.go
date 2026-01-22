@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"nbox/internal/application"
 	"net"
 	"net/http"
 	"time"
 
 	"go.uber.org/fx"
 	"go.uber.org/zap"
+	"nbox/internal/application"
 )
 
 func NewHttpServerMux(lc fx.Lifecycle, logger *zap.Logger) *http.ServeMux {
@@ -34,7 +34,7 @@ func NewHttpServerMux(lc fx.Lifecycle, logger *zap.Logger) *http.ServeMux {
 					logger.Error("Error al iniciar servidor HTTP: %v", zap.Error(err))
 				}
 			}()
-			logger.Info(fmt.Sprintf("Servidor HTTP escuchando en %s", listener))
+			logger.Info("Servidor HTTP escuchando en " + listener)
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
@@ -44,7 +44,7 @@ func NewHttpServerMux(lc fx.Lifecycle, logger *zap.Logger) *http.ServeMux {
 
 			if err := server.Shutdown(shutdownCtx); err != nil {
 				logger.Error("Error durante el apagado del servidor HTTP: %v", zap.Error(err))
-				return err
+				return fmt.Errorf("failed to shutdown HTTP server: %w", err)
 			}
 			logger.Info("Servidor HTTP detenido correctamente.")
 			return nil

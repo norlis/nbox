@@ -5,7 +5,7 @@ import (
 )
 
 //
-//var (
+// var (
 //	ErrUserNotFound    = errors.New("user not found")
 //	ErrInvalidPassword = errors.New("invalid password") // ✅ Nuevo error específico
 //)
@@ -19,5 +19,5 @@ type User struct {
 
 type UserRepository interface {
 	FindByUsername(ctx context.Context, username string) (*User, error)
-	ValidatePassword(ctx context.Context, username string, password string) (*User, error)
+	ValidatePassword(ctx context.Context, username, password string) (*User, error)
 }

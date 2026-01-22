@@ -56,6 +56,10 @@ func NewParameterStoreBackend(
 	}
 }
 
+func (p *ParameterStoreBackend) BackendType() backend.StorageBackendType {
+	return backend.BackendParameterStore
+}
+
 func (p *ParameterStoreBackend) Upsert(ctx context.Context, entries []models.Entry) operations.Results {
 
 	ch := make(chan operations.Result, len(entries))
@@ -102,12 +106,12 @@ func (p *ParameterStoreBackend) Upsert(ctx context.Context, entries []models.Ent
 	return results
 }
 
-func (p *ParameterStoreBackend) Resolve(ctx context.Context, key string) ([]byte, error) {
+func (p *ParameterStoreBackend) Resolve(ctx context.Context, key string) (*models.Entry, error) {
 	entry, err := p.Retrieve(ctx, key)
 	if err != nil || entry == nil {
 		return nil, err
 	}
-	return []byte(entry.Value), nil
+	return entry, nil
 }
 
 func (p *ParameterStoreBackend) Retrieve(ctx context.Context, key string, opts ...domain.RetrieveOption) (*models.Entry, error) {
@@ -181,6 +185,7 @@ func (p *ParameterStoreBackend) Send(ctx context.Context, entry models.Entry) op
 	if entryToIndex.Metadata == nil {
 		entryToIndex.Metadata = &models.Metadata{}
 	}
+	entryToIndex.Metadata.Version = out.Version
 	entryToIndex.Metadata.StorageBackend = backend.BackendParameterStore
 	if entry.Secure {
 		entryToIndex.Metadata.StorageBackend = backend.BackendParameterStoreSecure

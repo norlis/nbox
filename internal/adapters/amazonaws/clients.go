@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go-v2/service/sns"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -33,6 +31,6 @@ func NewSsmClient(cfg *aws.Config) *ssm.Client {
 	return ssm.NewFromConfig(*cfg)
 }
 
-func NewSnsClient(cfg *aws.Config) *sns.Client {
-	return sns.NewFromConfig(*cfg)
-}
+//func NewSnsClient(cfg *aws.Config) *sns.Client {
+//	return sns.NewFromConfig(*cfg)
+//}

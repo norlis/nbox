@@ -6,16 +6,15 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"strconv"
+	"strings"
+	"time"
+
 	"nbox/internal/application"
 	"nbox/internal/domain"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
 	"nbox/internal/usecases"
-	"strconv"
-	"strings"
-	"time"
-
-	"go.uber.org/zap"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -23,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/cenkalti/backoff/v4"
+	"go.uber.org/zap"
 )
 
 const (
@@ -63,17 +63,17 @@ func NewPermitPool(permits int) *PermitPool {
 	}
 }
 
-// Acquire returns when a permit has been acquired
+// Acquire returns when a permit has been acquired.
 func (c *PermitPool) Acquire() {
 	c.sem <- 1
 }
 
-// Release returns a permit to the pool
+// Release returns a permit to the pool.
 func (c *PermitPool) Release() {
 	<-c.sem
 }
 
-// CurrentPermits Get number of requests in the permit pool
+// CurrentPermits Get number of requests in the permit pool.
 func (c *PermitPool) CurrentPermits() int {
 	return len(c.sem)
 }
@@ -87,9 +87,9 @@ type dynamodbBackend struct {
 	logger      *zap.Logger
 }
 
-func NewDynamodbBackend(dynamodb *dynamodb.Client, config *application.Config, pathUseCase *usecases.PathUseCase, logger *zap.Logger) domain.EntryAdapter {
+func NewDynamodbBackend(client *dynamodb.Client, config *application.Config, pathUseCase *usecases.PathUseCase, logger *zap.Logger) domain.EntryAdapter {
 	return &dynamodbBackend{
-		client:      dynamodb,
+		client:      client,
 		config:      config,
 		permitPool:  NewPermitPool(0),
 		pathUseCase: pathUseCase,
@@ -118,7 +118,7 @@ func (d *dynamodbBackend) sanitize(key string) string {
 	return key
 }
 
-// Upsert is used to insert or update an entry
+// Upsert is used to insert or update an entry.
 func (d *dynamodbBackend) Upsert(ctx context.Context, entries []models.Entry) operations.Results {
 	records := map[string]Record{}
 	tracking := map[string]RecordTracking{}
@@ -138,9 +138,9 @@ func (d *dynamodbBackend) Upsert(ctx context.Context, entries []models.Entry) op
 		entryKey := d.sanitize(entry.Key)
 
 		results[entryKey] = operations.Result{
-			Key:   entryKey,
-			Type:  operations.Updated,
-			Error: nil,
+			Key:    entryKey,
+			Action: operations.Updated,
+			Err:    nil,
 		}
 
 		path := d.pathUseCase.PathWithoutKey(entryKey)
@@ -177,7 +177,7 @@ func (d *dynamodbBackend) Upsert(ctx context.Context, entries []models.Entry) op
 
 		for _, prefix := range d.pathUseCase.Prefixes(entryKey) {
 			path = d.pathUseCase.PathWithoutKey(prefix)
-			key = fmt.Sprintf("%s/", d.pathUseCase.BaseKey(prefix))
+			key = d.pathUseCase.BaseKey(prefix) + "/"
 			records[fmt.Sprintf("%s%s", path, key)] = Record{
 				Path: path,
 				RecordBase: &RecordBase{
@@ -212,9 +212,9 @@ func (d *dynamodbBackend) Upsert(ctx context.Context, entries []models.Entry) op
 		k := fmt.Sprintf("%s/%s", path, key)
 
 		results[k] = operations.Result{
-			Key:   k,
-			Type:  operations.Updated,
-			Error: result1.Err,
+			Key:    k,
+			Action: operations.Updated,
+			Err:    result1.Err,
 		}
 	}
 
@@ -236,11 +236,9 @@ func (d *dynamodbBackend) writeReqsBatch(ctx context.Context, tableName string, 
 		boff.MaxElapsedTime = 600 * time.Second
 
 		for len(batch) > 0 {
-
 			output, err = d.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
 				RequestItems: batch,
 			})
-
 			if err != nil {
 				break
 			}
@@ -258,7 +256,6 @@ func (d *dynamodbBackend) writeReqsBatch(ctx context.Context, tableName string, 
 				err = ErrBackendTimeout
 				break
 			}
-
 		}
 		d.permitPool.Release()
 		if err != nil {
@@ -268,7 +265,7 @@ func (d *dynamodbBackend) writeReqsBatch(ctx context.Context, tableName string, 
 	return BatchResult{Out: nil, Err: nil}
 }
 
-// Retrieve Get is used to fetch an entry
+// Retrieve Get is used to fetch an entry.
 func (d *dynamodbBackend) Retrieve(ctx context.Context, key string) (*models.Entry, error) {
 	p, _ := attributevalue.Marshal(d.pathUseCase.PathWithoutKey(key))
 	k, _ := attributevalue.Marshal(d.pathUseCase.BaseKey(key))
@@ -278,17 +275,17 @@ func (d *dynamodbBackend) Retrieve(ctx context.Context, key string) (*models.Ent
 		TableName:      aws.String(d.config.EntryTableName),
 		ConsistentRead: aws.Bool(true),
 	})
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get item from DynamoDB: %w", err)
 	}
 	if resp.Item == nil {
+		//nolint:nilnil
 		return nil, nil
 	}
 	record := &Record{}
 	err = attributevalue.UnmarshalMap(resp.Item, record)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal DynamoDB item: %w", err)
 	}
 
 	return &models.Entry{
@@ -307,10 +304,9 @@ func (d *dynamodbBackend) List(ctx context.Context, prefix string) ([]models.Ent
 
 	keyEx := expression.Key("Path").Equal(expression.Value(prefix))
 	expr, err := expression.NewBuilder().WithKeyCondition(keyEx).Build()
-
 	if err != nil {
 		d.logger.Error("ErrExpressionBuilder", zap.Error(err))
-		return nil, err
+		return nil, fmt.Errorf("failed to build DynamoDB expression: %w", err)
 	}
 
 	queryInput := &dynamodb.QueryInput{
@@ -326,13 +322,13 @@ func (d *dynamodbBackend) List(ctx context.Context, prefix string) ([]models.Ent
 		response, err = queryPaginator.NextPage(ctx)
 		if err != nil {
 			d.logger.Error("ErrQueryPaginator", zap.Error(err), zap.String("prefix", prefix))
-			return nil, err
+			return nil, fmt.Errorf("failed to get next page from DynamoDB: %w", err)
 		}
 		var records []Record
 		err = attributevalue.UnmarshalListOfMaps(response.Items, &records)
 		if err != nil {
 			d.logger.Error("ErrUnmarshalListOfMaps", zap.Error(err), zap.String("prefix", prefix))
-			return nil, err
+			return nil, fmt.Errorf("failed to unmarshal DynamoDB items: %w", err)
 		}
 
 		for _, record := range records {
@@ -351,7 +347,6 @@ func (d *dynamodbBackend) List(ctx context.Context, prefix string) ([]models.Ent
 }
 
 func (d *dynamodbBackend) Delete(ctx context.Context, key string) error {
-
 	p, _ := attributevalue.Marshal(d.pathUseCase.PathWithoutKey(key))
 	k, _ := attributevalue.Marshal(d.pathUseCase.BaseKey(key))
 
@@ -389,10 +384,9 @@ func (d *dynamodbBackend) Tracking(ctx context.Context, key string) ([]models.Tr
 	expr, err := expression.NewBuilder().
 		WithKeyCondition(keyEx).
 		Build()
-
 	if err != nil {
 		d.logger.Error("ErrExpressionBuilder", zap.Error(err))
-		return nil, err
+		return nil, fmt.Errorf("failed to build DynamoDB expression: %w", err)
 	}
 
 	queryInput := &dynamodb.QueryInput{
@@ -409,13 +403,13 @@ func (d *dynamodbBackend) Tracking(ctx context.Context, key string) ([]models.Tr
 		response, err = queryPaginator.NextPage(ctx)
 		if err != nil {
 			d.logger.Error("ErrQueryPaginator", zap.Error(err), zap.String("key", key))
-			return nil, err
+			return nil, fmt.Errorf("failed to get next page from DynamoDB: %w", err)
 		}
 		var records []Record
 		err = attributevalue.UnmarshalListOfMaps(response.Items, &records)
 		if err != nil {
 			d.logger.Error("ErrUnmarshalListOfMaps", zap.Error(err), zap.String("key", key))
-			return nil, err
+			return nil, fmt.Errorf("failed to unmarshal DynamoDB items: %w", err)
 		}
 
 		for _, record := range records {
@@ -435,14 +429,13 @@ func (d *dynamodbBackend) Tracking(ctx context.Context, key string) ([]models.Tr
 }
 
 func prepareWriteRequest[T any](items map[string]T) []types.WriteRequest {
-	var writeReqs []types.WriteRequest
+	writeReqs := make([]types.WriteRequest, 0, len(items))
 	var item map[string]types.AttributeValue
 	var err error
 
 	for _, r := range items {
 		item, err = attributevalue.MarshalMap(r)
 		if err != nil {
-			//d.logger.Error("ErrMarshalMap", zap.Error(err))
 			log.Printf("Err could not convert Record to DynamoDB item: %v", err)
 			continue
 		}

@@ -3,6 +3,7 @@ package exporter
 import (
 	"encoding/json"
 	"fmt"
+
 	"nbox/internal/domain"
 	"nbox/internal/domain/models"
 )
@@ -25,7 +26,7 @@ func (e *JSONExporter) Export(entries []models.Entry) ([]byte, error) {
 
 	data, err := json.MarshalIndent(normalized, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", domain.ErrInvalidFileFormat, err)
+		return nil, fmt.Errorf("%w: %w", domain.ErrInvalidFileFormat, err)
 	}
 
 	return data, nil

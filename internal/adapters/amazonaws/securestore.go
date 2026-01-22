@@ -3,19 +3,19 @@ package amazonaws
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
+	"sync"
+
 	"nbox/internal/application"
 	"nbox/internal/domain"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
-	"strings"
-	"sync"
-
-	"go.uber.org/zap"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
-
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	"go.uber.org/zap"
 )
 
 var ErrParameterNotFound = errors.New("parameter not found or has no value")
@@ -37,9 +37,8 @@ func (s *secureParameterStore) RetrieveSecretValue(ctx context.Context, key stri
 		Name:           aws.String(key),
 		WithDecryption: aws.Bool(true),
 	})
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get parameter from SSM: %w", err)
 	}
 
 	if output.Parameter == nil {
@@ -74,10 +73,10 @@ func (s *secureParameterStore) Upsert(ctx context.Context, entries []models.Entr
 	results := make(operations.Results, len(entries))
 
 	for result := range ch {
-		if result.Error != nil {
+		if result.Err != nil {
 			s.logger.Error("ErrSecureUpsert",
 				zap.String("key", result.Key),
-				zap.Error(result.Error),
+				zap.Error(result.Err),
 			)
 		}
 		results[result.Key] = result
@@ -89,9 +88,8 @@ func (s *secureParameterStore) Upsert(ctx context.Context, entries []models.Entr
 func (s *secureParameterStore) Send(ctx context.Context, entry models.Entry) operations.Result {
 	in := prepareSecret(entry, s.config.ParameterStoreKeyId)
 	out, err := s.client.PutParameter(ctx, in)
-
 	if err != nil {
-		return operations.Result{Key: entry.Key, Error: err}
+		return operations.Result{Key: entry.Key, Err: err}
 	}
 
 	opType := operations.Updated
@@ -100,7 +98,7 @@ func (s *secureParameterStore) Send(ctx context.Context, entry models.Entry) ope
 		s.AddTags(ctx, in.Name)
 	}
 
-	return operations.Result{Key: entry.Key, Type: opType, Error: nil}
+	return operations.Result{Key: entry.Key, Action: opType, Err: nil}
 }
 
 func (s *secureParameterStore) AddTags(ctx context.Context, key *string) {

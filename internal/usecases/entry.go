@@ -3,11 +3,13 @@ package usecases
 import (
 	"context"
 	"fmt"
+	"maps"
+	"strings"
+
 	"nbox/internal/application"
 	"nbox/internal/domain"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
-	"strings"
 )
 
 type EntryUseCase struct {
@@ -16,6 +18,7 @@ type EntryUseCase struct {
 	config        *application.Config
 }
 
+// TODO eliminar
 func NewEntryUseCase(
 	entryAdapter domain.EntryAdapter,
 	secretAdapter domain.SecretAdapter,
@@ -25,9 +28,8 @@ func NewEntryUseCase(
 }
 
 // Upsert
-// ARN arn:aws:ssm:<REGION_NAME>:<ACCOUNT_ID>:parameter/<parameter-name>
+// ARN arn:aws:ssm:<REGION_NAME>:<ACCOUNT_ID>:parameter/<parameter-name>.
 func (e *EntryUseCase) Upsert(ctx context.Context, entries []models.Entry) []operations.Result {
-
 	secrets := make([]models.Entry, 0)
 	for _, entry := range entries {
 		if entry.Secure {
@@ -38,26 +40,26 @@ func (e *EntryUseCase) Upsert(ctx context.Context, entries []models.Entry) []ope
 	secureResults := e.secretAdapter.Upsert(ctx, secrets)
 
 	for i, entry := range entries {
-		if entry.Secure {
-			err := secureResults[entry.Key].Error
-			entries[i].Value = ""
-
-			if err != nil {
-				continue
-			}
-
-			key := cleanedKey(entry.Key)
-			entries[i].Value = e.GetParameterArn(key)
+		if !entry.Secure {
+			continue
 		}
+
+		err := secureResults[entry.Key].Err
+		entries[i].Value = ""
+
+		if err != nil {
+			continue
+		}
+
+		key := cleanedKey(entry.Key)
+		entries[i].Value = e.GetParameterArn(key)
 	}
 
 	updated := e.entryAdapter.Upsert(ctx, entries)
 
-	for k, v := range secureResults {
-		updated[k] = v
-	}
+	maps.Copy(updated, secureResults)
 
-	var results []operations.Result
+	results := make([]operations.Result, 0, len(updated))
 	for _, v := range updated {
 		results = append(results, v)
 	}

@@ -11,7 +11,7 @@ import (
 	"golang.org/x/term"
 )
 
-// ✅ Banner ASCII
+// ✅ Banner ASCII.
 const banner = `
 ▗▖  ▗▖▗▄▄▖  ▗▄▖ ▗▖  ▗▖    ▗▄▄▄▖▗▄▖  ▗▄▖ ▗▖    ▗▄▄▖
 ▐▛▚▖▐▌▐▌ ▐▌▐▌ ▐▌ ▝▚▞▘       █ ▐▌ ▐▌▐▌ ▐▌▐▌   ▐▌   
@@ -32,7 +32,6 @@ const (
 )
 
 func main() {
-
 	fmt.Print(banner)
 
 	cost := flag.Int("cost", bcrypt.DefaultCost, "Costo de Bcrypt (entre 4 y 31)")

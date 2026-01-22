@@ -3,8 +3,10 @@ package persistence
 import (
 	"context"
 	"encoding/json"
-	"nbox/internal/domain"
+	"fmt"
 	"sync"
+
+	"nbox/internal/domain"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -25,7 +27,7 @@ type inMemoryUserRepository struct {
 func NewInMemoryUserRepository(jsonCredentials []byte) (domain.UserRepository, error) {
 	var schema userSchema
 	if err := json.Unmarshal(jsonCredentials, &schema); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal user data: %w", err)
 	}
 
 	store := &inMemoryUserRepository{users: make(Users, len(schema))}
@@ -56,7 +58,7 @@ func (r *inMemoryUserRepository) FindByUsername(ctx context.Context, username st
 	return &user, nil
 }
 
-func (r *inMemoryUserRepository) ValidatePassword(ctx context.Context, username string, password string) (*domain.User, error) {
+func (r *inMemoryUserRepository) ValidatePassword(ctx context.Context, username, password string) (*domain.User, error) {
 	user, err := r.FindByUsername(ctx, username)
 	if err != nil {
 		return nil, err

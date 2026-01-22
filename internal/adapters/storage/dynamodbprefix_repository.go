@@ -26,6 +26,7 @@ type dynamoPrefixConfigRepository struct {
 	dynamodbKit *DynamodbKit
 	pathUseCase *usecases.PathUseCase
 	guard       *resiliency.Guard
+	tableName   string
 }
 
 // NewDynamoPrefixConfigRepository creates a new DynamoDB-backed prefix configuration repository
@@ -35,6 +36,7 @@ func NewDynamoPrefixConfigRepository(
 	logger *zap.Logger,
 	dynamodbKit *DynamodbKit,
 	pathUseCase *usecases.PathUseCase,
+	config *application.Config,
 ) domain.PrefixConfigRepository {
 
 	guard := resiliency.NewGuard(resiliency.GuardConfig{
@@ -51,6 +53,7 @@ func NewDynamoPrefixConfigRepository(
 		dynamodbKit: dynamodbKit,
 		pathUseCase: pathUseCase,
 		guard:       guard,
+		tableName:   config.PrefixConfigTableName,
 	}
 }
 
@@ -104,7 +107,9 @@ func (d *dynamoPrefixConfigRepository) GetByPrefix(ctx context.Context, prefix s
 	}
 
 	// 3. Execute BatchGetItem with retry/circuit breaker
-	items, err := d.batchGet(ctx, keys)
+	//items, err := d.batchGet(ctx, keys)
+	items, err := d.dynamodbKit.BatchGet(ctx, d.tableName, keys)
+
 	if err != nil {
 		d.logger.Error("BatchGetItem failed",
 			zap.String("prefix", cleanKey),
@@ -163,23 +168,21 @@ func (d *dynamoPrefixConfigRepository) GetByPrefix(ctx context.Context, prefix s
 // List retrieves all existing prefix configurations.
 // Use cases: CLI tools, backups, cache warming.
 func (d *dynamoPrefixConfigRepository) List(ctx context.Context) ([]backend.PrefixConfig, error) {
-	// TODO: Move to struct field d.tableName
-	tableName := "prometeoapi-nbox-prefix-config-development"
 	start := time.Now()
 
-	d.logger.Info("Scanning all prefix configs", zap.String("table", tableName))
+	d.logger.Info("Scanning all prefix configs", zap.String("table", d.tableName))
 
 	configs := make([]backend.PrefixConfig, 0)
 
 	paginator := dynamodb.NewScanPaginator(d.client, &dynamodb.ScanInput{
-		TableName: aws.String(tableName),
+		TableName: aws.String(d.tableName),
 	})
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
 			d.logger.Error("Scan page failed",
-				zap.String("table", tableName),
+				zap.String("table", d.tableName),
 				zap.Error(err))
 			return nil, fmt.Errorf("scan failed: %w", err)
 		}
@@ -187,7 +190,7 @@ func (d *dynamoPrefixConfigRepository) List(ctx context.Context) ([]backend.Pref
 		var chunk []backend.PrefixConfig
 		if err := attributevalue.UnmarshalListOfMaps(page.Items, &chunk); err != nil {
 			d.logger.Error("Unmarshal page failed",
-				zap.String("table", tableName),
+				zap.String("table", d.tableName),
 				zap.Int("item_count", len(page.Items)),
 				zap.Error(err))
 			return nil, fmt.Errorf("unmarshal failed: %w", err)
@@ -216,12 +219,11 @@ func (d *dynamoPrefixConfigRepository) Upsert(ctx context.Context, prefixes []ba
 	}
 
 	stats := backend.UpsertStats{}
-	tableName := "prometeoapi-nbox-prefix-config-development"
 	start := time.Now()
 
 	d.logger.Info("Upserting prefix configs",
 		zap.Int("count", len(prefixes)),
-		zap.String("table", tableName))
+		zap.String("table", d.tableName))
 
 	requests := make([]types.WriteRequest, 0, len(prefixes))
 	now := time.Now().UTC()
@@ -246,7 +248,7 @@ func (d *dynamoPrefixConfigRepository) Upsert(ctx context.Context, prefixes []ba
 		})
 	}
 
-	failedItems, err := d.dynamodbKit.BatchWrite(ctx, tableName, requests)
+	failedItems, err := d.dynamodbKit.BatchWrite(ctx, d.tableName, requests)
 
 	stats.Processed = len(requests) - len(failedItems)
 	stats.Failed += len(failedItems)
@@ -267,55 +269,54 @@ func (d *dynamoPrefixConfigRepository) Upsert(ctx context.Context, prefixes []ba
 // batchGet handles retry and throttling logic for DynamoDB BatchGetItem operations.
 // It processes unprocessed keys across multiple iterations until all items are retrieved
 // or the Guard exhausts retries.
-func (d *dynamoPrefixConfigRepository) batchGet(ctx context.Context, keys []map[string]types.AttributeValue) ([]map[string]types.AttributeValue, error) {
-	tableName := "prometeoapi-nbox-prefix-config-development"
-
-	var results []map[string]types.AttributeValue
-	var unprocessed = keys
-
-	// Outer loop: responsible for advancing work until nothing is pending
-	for len(unprocessed) > 0 {
-		// Capture current batch for this attempt
-		// If Guard retries internally, it will use this same currentBatch
-		currentBatch := unprocessed
-
-		err := d.guard.Execute(ctx, func() error {
-			input := &dynamodb.BatchGetItemInput{
-				RequestItems: map[string]types.KeysAndAttributes{
-					tableName: {
-						Keys:           currentBatch,
-						ConsistentRead: aws.Bool(true),
-					},
-				},
-			}
-
-			out, err := d.client.BatchGetItem(ctx, input)
-			if err != nil {
-				return err // Guard will decide if retryable (network error, 5xx, etc.)
-			}
-
-			// Accumulate successful responses
-			if list, ok := out.Responses[tableName]; ok {
-				results = append(results, list...)
-			}
-
-			// Check for pending items for next outer loop iteration
-			// Note: We don't return error here. Partial success from DynamoDB is valid.
-			// Update external 'unprocessed' variable so the for loop continues with remaining items.
-			if len(out.UnprocessedKeys) > 0 {
-				unprocessed = out.UnprocessedKeys[tableName].Keys
-			} else {
-				unprocessed = nil
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			// If Guard fails (exhausted retries or circuit breaker open), fail entire operation
-			return nil, fmt.Errorf("batch get failed after retries: %w", err)
-		}
-	}
-
-	return results, nil
-}
+//func (d *dynamoPrefixConfigRepository) batchGet(ctx context.Context, keys []map[string]types.AttributeValue) ([]map[string]types.AttributeValue, error) {
+//
+//	var results []map[string]types.AttributeValue
+//	var unprocessed = keys
+//
+//	// Outer loop: responsible for advancing work until nothing is pending
+//	for len(unprocessed) > 0 {
+//		// Capture current batch for this attempt
+//		// If Guard retries internally, it will use this same currentBatch
+//		currentBatch := unprocessed
+//
+//		err := d.guard.Execute(ctx, func() error {
+//			input := &dynamodb.BatchGetItemInput{
+//				RequestItems: map[string]types.KeysAndAttributes{
+//					d.tableName: {
+//						Keys:           currentBatch,
+//						ConsistentRead: aws.Bool(true),
+//					},
+//				},
+//			}
+//
+//			out, err := d.client.BatchGetItem(ctx, input)
+//			if err != nil {
+//				return err // Guard will decide if retryable (network error, 5xx, etc.)
+//			}
+//
+//			// Accumulate successful responses
+//			if list, ok := out.Responses[d.tableName]; ok {
+//				results = append(results, list...)
+//			}
+//
+//			// Check for pending items for next outer loop iteration
+//			// Note: We don't return error here. Partial success from DynamoDB is valid.
+//			// Update external 'unprocessed' variable so the for loop continues with remaining items.
+//			if len(out.UnprocessedKeys) > 0 {
+//				unprocessed = out.UnprocessedKeys[d.tableName].Keys
+//			} else {
+//				unprocessed = nil
+//			}
+//
+//			return nil
+//		})
+//
+//		if err != nil {
+//			// If Guard fails (exhausted retries or circuit breaker open), fail entire operation
+//			return nil, fmt.Errorf("batch get failed after retries: %w", err)
+//		}
+//	}
+//
+//	return results, nil
+//}

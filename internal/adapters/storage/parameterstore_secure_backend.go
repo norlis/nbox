@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"nbox/internal/domain"
+	"nbox/internal/domain/backend"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
 
@@ -12,18 +13,20 @@ import (
 type ParameterStoreSecureBackend struct {
 	logger *zap.Logger
 	base   *ParameterStoreBackend
-	//base domain.EntryPartialStore
 }
 
 func NewParameterStoreSecureBackend(
 	backend *ParameterStoreBackend,
-//backend domain.EntryPartialStore,
 	logger *zap.Logger,
 ) *ParameterStoreSecureBackend {
 	return &ParameterStoreSecureBackend{
 		base:   backend,
 		logger: logger,
 	}
+}
+
+func (p *ParameterStoreSecureBackend) BackendType() backend.StorageBackendType {
+	return backend.BackendParameterStoreSecure
 }
 
 func (p *ParameterStoreSecureBackend) Upsert(ctx context.Context, entries []models.Entry) operations.Results {
@@ -35,12 +38,12 @@ func (p *ParameterStoreSecureBackend) Upsert(ctx context.Context, entries []mode
 	return p.base.Upsert(ctx, secureEntries)
 }
 
-func (p *ParameterStoreSecureBackend) Resolve(ctx context.Context, key string) ([]byte, error) {
+func (p *ParameterStoreSecureBackend) Resolve(ctx context.Context, key string) (*models.Entry, error) {
 	entry, err := p.base.Retrieve(ctx, key, domain.WithDecryption(true))
 	if err != nil || entry == nil {
 		return nil, err
 	}
-	return []byte(entry.Value), nil
+	return entry, nil
 }
 
 func (p *ParameterStoreSecureBackend) Retrieve(ctx context.Context, key string, opts ...domain.RetrieveOption) (*models.Entry, error) {

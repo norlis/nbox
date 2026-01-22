@@ -10,6 +10,6 @@ type Stage struct {
 }
 
 type Template struct {
-	Name  string `json:"name" dynamodbav:"path"` // s3 path
-	Value string `json:"value" dynamodbav:"value"`
+	Name  string `dynamodbav:"path"  json:"name"` // s3 path
+	Value string `dynamodbav:"value" json:"value"`
 }

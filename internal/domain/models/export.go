@@ -9,7 +9,7 @@ const (
 	ExportFormatECSTaskDef ExportFormat = "ecs"
 )
 
-// IsValid verifica si el formato es válido
+// IsValid verifica si el formato es válido.
 func (f ExportFormat) IsValid() bool {
 	switch f {
 	case ExportFormatJSON, ExportFormatYAML, ExportFormatDotEnv, ExportFormatECSTaskDef:
@@ -18,7 +18,7 @@ func (f ExportFormat) IsValid() bool {
 	return false
 }
 
-// ContentType retorna el content-type HTTP apropiado
+// ContentType retorna el content-type HTTP apropiado.
 func (f ExportFormat) ContentType() string {
 	switch f {
 	case ExportFormatJSON:
@@ -34,7 +34,7 @@ func (f ExportFormat) ContentType() string {
 	}
 }
 
-// FileExtension retorna la extensión de archivo apropiada
+// FileExtension retorna la extensión de archivo apropiada.
 func (f ExportFormat) FileExtension() string {
 	switch f {
 	case ExportFormatJSON:
@@ -50,7 +50,7 @@ func (f ExportFormat) FileExtension() string {
 	}
 }
 
-// ExportOptions opciones para exportación
+// ExportOptions opciones para exportación.
 type ExportOptions struct {
 	Prefix string       `json:"prefix,omitempty"`
 	Format ExportFormat `json:"format"`
@@ -63,9 +63,9 @@ func (o *ExportOptions) Validate() error {
 	return nil
 }
 
-// ExportResult resultado de una exportación
+// ExportResult resultado de una exportación.
 type ExportResult struct {
 	Entries []Entry `json:"entries" yaml:"entries"`
-	Content []byte  `json:"-" yaml:"-"`
-	Size    int64   `json:"-" yaml:"-"`
+	Content []byte  `json:"-"       yaml:"-"`
+	Size    int64   `json:"-"       yaml:"-"`
 }

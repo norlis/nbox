@@ -2,12 +2,15 @@ package storage
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"nbox/internal/domain"
 	"nbox/internal/domain/backend"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -23,7 +26,7 @@ func NewStorageGateway(
 	index domain.EntryFullStore,
 	prefixRepo domain.PrefixConfigRepository,
 	logger *zap.Logger,
-) *Gateway {
+) domain.EntryManager {
 	return &Gateway{
 		backends:   make(map[backend.StorageBackendType]domain.EntryPartialStore),
 		index:      index,
@@ -32,8 +35,16 @@ func NewStorageGateway(
 	}
 }
 
-func (c *Gateway) RegisterBackend(t backend.StorageBackendType, adapter domain.EntryPartialStore) {
-	c.backends[t] = adapter
+func (g *Gateway) calculateChecksum(entry *models.Entry) {
+	if entry.Metadata == nil {
+		entry.Metadata = &models.Metadata{}
+	}
+	hash := sha256.Sum256([]byte(entry.Value))
+	entry.Metadata.Hash = hex.EncodeToString(hash[:])
+}
+
+func (g *Gateway) RegisterBackend(adapter domain.EntryPartialStore) {
+	g.backends[adapter.BackendType()] = adapter
 }
 
 func (g *Gateway) resolveBackend(ctx context.Context, key string, secure bool) (domain.EntryPartialStore, error) {
@@ -56,58 +67,57 @@ func (g *Gateway) resolveBackend(ctx context.Context, key string, secure bool) (
 	return adapter, nil
 }
 
-// Retrieve optimizado: Check Index First
-func (g *Gateway) Retrieve(ctx context.Context, key string, opts ...domain.RetrieveOption) (*models.Entry, error) {
-	// 1. Paso 1: Consultar SIEMPRE al Índice (DynamoDB) primero.
-	// Esto actúa como nuestra "cache de ruta" y fuente de metadatos.
+func (g *Gateway) RetrieveMany(ctx context.Context, keys []string) (map[string]*models.Entry, error) {
+	return g.index.RetrieveMany(ctx, keys)
+}
+
+// Retrieve Index First
+func (g *Gateway) Retrieve(ctx context.Context, key string, _ ...domain.RetrieveOption) (*models.Entry, error) {
+	return g.index.Retrieve(ctx, key)
+}
+
+// Resolve optimizado
+// Resolve obtiene la metadata del índice y el valor real del backend
+func (g *Gateway) Resolve(ctx context.Context, key string) (*models.Entry, error) {
+	// 1. Recuperamos la "cáscara" y metadata desde DynamoDB (Índice)
 	indexEntry, err := g.index.Retrieve(ctx, key)
 	if err != nil {
 		return nil, err
 	}
 	if indexEntry == nil {
-		return nil, nil // No existe ni en el índice
+		return nil, domain.ErrEntryNotFound
 	}
 
-	// 2. Paso 2: "Service Discovery" a nivel de dato.
-	// Miramos la metadata para saber qué backend tiene el dato real.
 	backendType := indexEntry.Metadata.StorageBackend
 
-	// Si no tiene backend definido (legacy) o dice "dynamodb",
-	// entonces YA tenemos el dato (lo acabamos de leer del índice). ¡Eficiencia x2!
+	// 2. Si el backend es local (Dynamo) o Legacy, ya tenemos el valor final
 	if backendType == "" || backendType == backend.BackendDynamoDB {
+		// Opcional: Si quieres asegurarte de que Secure sea consistente
+		// indexEntry.Secure = false
 		return indexEntry, nil
 	}
 
-	// 3. Paso 3: Si vive en otro lado (ej. SSM), delegamos.
+	// 3. Buscamos el adaptador correcto
 	store, ok := g.backends[backendType]
 	if !ok {
-		return nil, fmt.Errorf("backend %s not registered", backendType)
+		g.logger.Error("Critical: Index points to unknown backend",
+			zap.String("key", key),
+			zap.String("backend", string(backendType)))
+		return nil, fmt.Errorf("backend no registrado: %s", backendType)
 	}
 
-	return store.Retrieve(ctx, key, opts...)
-}
-
-// Resolve optimizado
-func (g *Gateway) Resolve(ctx context.Context, key string) ([]byte, error) {
-	// Misma lógica: Preguntar al índice dónde está el secreto
-	indexEntry, err := g.index.Retrieve(ctx, key)
-	if err != nil || indexEntry == nil {
+	// 4. Obtenemos SOLO el valor secreto (bytes) desde la fuente (SSM)
+	// No usamos store.Retrieve() para evitar una llamada extra y para confiar en la metadata del índice.
+	entry, err := store.Resolve(ctx, key)
+	if err != nil {
 		return nil, err
 	}
 
-	backendType := indexEntry.Metadata.StorageBackend
+	// 5. "Hidratamos" el entry del índice con el entry externo
+	indexEntry.Value = entry.Value
+	indexEntry.Secure = entry.Secure
 
-	// Si es Dynamo, resolvemos localmente (ej. desencriptar si fuera necesario)
-	if backendType == backend.BackendDynamoDB {
-		return []byte(indexEntry.Value), nil
-	}
-
-	// Si es externo, vamos directo a la fuente
-	if store, ok := g.backends[backendType]; ok {
-		return store.Resolve(ctx, key)
-	}
-
-	return nil, fmt.Errorf("backend desconocido: %s", backendType)
+	return indexEntry, nil
 }
 
 func (g *Gateway) Delete(ctx context.Context, key string) error {
@@ -136,88 +146,113 @@ func (g *Gateway) List(ctx context.Context, prefix string) ([]models.Entry, erro
 	return g.index.List(ctx, prefix)
 }
 
-// Tracking SIEMPRE usa el Índice Global (DynamoDB)
-func (g *Gateway) Tracking(ctx context.Context, key string) ([]models.Tracking, error) {
-	return g.index.Tracking(ctx, key)
-}
-
 func (g *Gateway) Upsert(ctx context.Context, entries []models.Entry) operations.Results {
-	// 1. AGRUPACIÓN (Serial)
-	// Agrupamos las entradas por instancia de Backend para aprovechar sus métodos Upsert por lotes.
-	groupedEntries := make(map[domain.EntryPartialStore][]models.Entry)
 	results := make(operations.Results)
 
-	// Mutex para proteger el mapa de resultados durante la ejecución paralela
-	var mu sync.Mutex
+	// Listas para separar el trabajo
+	externalWrites := make(map[domain.EntryPartialStore][]models.Entry)
+	toIndex := make([]models.Entry, 0, len(entries))
 
+	// 1. CLASIFICACIÓN (Routing)
 	for _, entry := range entries {
+		entry.Metadata = &models.Metadata{
+			UpdatedAt: time.Now().UTC(),
+		}
+		g.calculateChecksum(&entry) // calcular checksum
+
 		store, err := g.resolveBackend(ctx, entry.Key, entry.Secure)
 		if err != nil {
-			// Fallos de resolución se agregan inmediatamente (fase serial, sin lock)
 			results.Add(entry.Key, operations.Failed, err)
 			continue
 		}
-		groupedEntries[store] = append(groupedEntries[store], entry)
+
+		// Si el destino ES el índice (DynamoDB), va directo a la cola de indexación.
+		if store == g.index {
+			// Aseguramos que tenga metadata base si no la tiene
+			if entry.Metadata == nil {
+				entry.Metadata = &models.Metadata{}
+			}
+			entry.Metadata.StorageBackend = store.BackendType()
+			toIndex = append(toIndex, entry)
+		} else {
+			// Si es externo (SSM), lo encolamos para ejecución remota
+			externalWrites[store] = append(externalWrites[store], entry)
+		}
 	}
 
+	// 2. EJECUCIÓN EXTERNA (Parallel Fan-Out)
 	var wg sync.WaitGroup
+	var mu sync.Mutex // Para proteger 'toIndex' y 'results'
 
-	for store, batch := range groupedEntries {
-		// Go 1.22+ captura las variables del loop (store, batch) de forma segura por defecto.
+	for store, batch := range externalWrites {
+		wg.Add(1)
+		go func(s domain.EntryPartialStore, entries []models.Entry) {
+			defer wg.Done()
 
-		wg.Go(func() {
-			// A. Escritura en el Backend "Source of Truth" (Batch)
-			opResults := store.Upsert(ctx, batch)
+			// Escribimos en SSM
+			opResults := s.Upsert(ctx, entries)
 
-			// Slice temporal para las entradas que deben ir al índice
-			toIndex := make([]models.Entry, 0, len(batch))
-
-			// B. Procesamiento de resultados y preparación para Índice
 			mu.Lock()
-			for _, entry := range batch {
-				res, ok := opResults[entry.Key]
-				if !ok {
-					continue
-				}
+			defer mu.Unlock()
 
-				// Guardamos el resultado global
-				results.Add(entry.Key, res.Action, res.Err)
+			for key, res := range opResults {
+				// Guardamos el resultado de la operación (éxito/fallo)
+				results[key] = res
 
-				// Lógica de Indexación (Solo si hubo éxito en el primario)
-				// Y solo si el backend actual NO es ya el índice global
-				if res.Err == nil && store != g.index {
-					// Lógica de Transparencia V2:
-					// Si el backend nos devolvió una versión modificada (Output), usamos esa.
-					// Si no, usamos la original.
+				// Si fue exitoso, preparamos la entrada para el índice
+				if res.Err == nil {
+					// CRÍTICO: Usamos el Output del backend (que trae el ARN y Metadata)
+					// Si por alguna razón no hay Output, usamos la entry original (fallback)
 					if res.Output != nil {
 						toIndex = append(toIndex, *res.Output)
 					} else {
-						toIndex = append(toIndex, entry)
+						toIndex = append(toIndex, entries[findEntryIndex(entries, key)])
 					}
 				}
 			}
-			mu.Unlock()
-
-			// C. Escritura en Índice Global (DynamoDB) - "Sidecar Indexing"
-			// Se ejecuta fuera del Lock para no bloquear a otras goroutines
-			if len(toIndex) > 0 {
-				idxRes := g.index.Upsert(ctx, toIndex)
-
-				// Solo logueamos errores de indexación, no fallamos la operación principal
-				for key, res := range idxRes {
-					if res.Err != nil {
-						g.logger.Warn("Failed to update global index",
-							zap.String("key", key),
-							zap.Error(res.Err),
-						)
-					}
-				}
-			}
-		})
+		}(store, batch)
 	}
 
-	// Esperamos a que todos los backends terminen
 	wg.Wait()
 
+	// 3. INDEXACIÓN UNIFICADA (Fan-In)
+	// Ahora 'toIndex' tiene nativo de Dynamo Y las referencias de SSM.
+	// Hacemos una sola llamada masiva a DynamoDB.
+
+	if len(toIndex) > 0 {
+		idxResults := g.index.Upsert(ctx, toIndex)
+
+		// Mezclamos los resultados del índice.
+		// Si falló la indexación de algo que ya se guardó en SSM, lo marcamos como error parcial o warning.
+		for key, res := range idxResults {
+			if res.Err != nil {
+				// Si ya teníamos un resultado de éxito (de SSM), esto es un error de "Consistencia Eventual"
+				if existingRes, exists := results[key]; exists && existingRes.Err == nil {
+					g.logger.Warn("Data saved in backend but failed to index", zap.String("key", key), zap.Error(res.Err))
+					// Opcional: Sobrescribir el error en results si quieres ser estricto
+					// results[key] = res
+				} else {
+					// Si era nativo de Dynamo, este es el error principal
+					results[key] = res
+				}
+			} else {
+				// Si era nativo de Dynamo y salió bien, lo registramos
+				if _, exists := results[key]; !exists {
+					results[key] = res
+				}
+			}
+		}
+	}
+
 	return results
+}
+
+// Helper simple para buscar en slice (puedes optimizarlo con un map si el batch es grande)
+func findEntryIndex(entries []models.Entry, key string) int {
+	for i, e := range entries {
+		if e.Key == key {
+			return i
+		}
+	}
+	return 0
 }

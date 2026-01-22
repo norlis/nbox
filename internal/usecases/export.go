@@ -5,27 +5,28 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"time"
+
 	"nbox/internal/application"
 	"nbox/internal/domain"
 	"nbox/internal/domain/models"
 	"nbox/internal/usecases/exporter"
-	"os"
-	"time"
 
 	"go.uber.org/zap"
 )
 
-// ExportUseCase maneja la lógica de exportación
+// ExportUseCase maneja la lógica de exportación.
 type ExportUseCase struct {
-	entryAdapter domain.EntryAdapter
+	entryAdapter domain.EntryManager
 	config       *application.Config
 	logger       *zap.Logger
 	exporters    map[models.ExportFormat]exporter.Exporter
 }
 
-// NewExportUseCase crea una nueva instancia
+// NewExportUseCase crea una nueva instancia.
 func NewExportUseCase(
-	entryAdapter domain.EntryAdapter,
+	entryAdapter domain.EntryManager,
 	config *application.Config,
 	logger *zap.Logger,
 ) *ExportUseCase {
@@ -51,7 +52,7 @@ func (uc *ExportUseCase) Export(ctx context.Context, opts models.ExportOptions) 
 	)
 
 	if err := opts.Validate(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to validate export options: %w", err)
 	}
 
 	entries, err := uc.entryAdapter.List(ctx, opts.Prefix)

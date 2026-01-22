@@ -4,22 +4,20 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net/http"
+
+	_ "nbox/docs"
 	"nbox/internal/adapters/amazonaws"
 	"nbox/internal/adapters/sse"
 	"nbox/internal/application"
 	"nbox/internal/entrypoints/api/auth"
 	"nbox/internal/entrypoints/api/handlers"
-	"net/http"
-
-	"github.com/norlis/httpgate/pkg/port"
-
-	"github.com/norlis/httpgate/pkg/adapter/opa"
-
-	_ "nbox/docs"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/middleware"
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
+	"github.com/norlis/httpgate/pkg/adapter/opa"
 	"github.com/norlis/httpgate/pkg/application/health"
+	"github.com/norlis/httpgate/pkg/port"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -27,20 +25,22 @@ import (
 
 type Params struct {
 	fx.In
-	Router          *http.ServeMux
-	Box             *handlers.BoxHandler
-	Entry           *handlers.EntryHandler
-	Static          *handlers.StaticHandler
-	Authn           *auth.Authn
-	Status          *health.Status
-	Render          presenters.Presenters
-	Logger          *zap.Logger
-	S3Checker       *amazonaws.S3Checker
-	DynamoDBChecker *amazonaws.DynamoDBChecker
-	SSMChecker      *amazonaws.SSMChecker
-	EventBroker     *sse.EventBroker
-	UI              *handlers.UIHandler
-	Export          *handlers.ExportHandler
+	Router              *http.ServeMux
+	Box                 *handlers.BoxHandler
+	Entry               *handlers.EntryHandler
+	Static              *handlers.StaticHandler
+	Authn               *auth.Authn
+	Status              *health.Status
+	Render              presenters.Presenters
+	Logger              *zap.Logger
+	S3Checker           *amazonaws.S3Checker
+	DynamoDBChecker     *amazonaws.DynamoDBChecker
+	SSMChecker          *amazonaws.SSMChecker
+	EventBroker         *sse.EventBroker
+	UI                  *handlers.UIHandler
+	Export              *handlers.ExportHandler
+	PrefixConfigHandler *handlers.PrefixConfigHandler
+	Tracker             *handlers.TrackHandler
 }
 
 // NewHttpApi
@@ -59,7 +59,7 @@ type Params struct {
 // @in header
 // @name Authorization
 // @description Bearer token authentication. Enter your JWT token in the format: Bearer {token}
-// @openapi 3.0.0
+// @openapi 3.0.0.
 func NewHttpApi(params Params) {
 	base := []middleware.Middleware{
 		middleware.TraceId(middleware.WithHeaderName("x-transaction-id"), middleware.WithLogger(params.Logger)),
@@ -80,7 +80,6 @@ func NewHttpApi(params Params) {
 	}
 
 	authz, err := opa.NewOpaSdkClientFromConfig(context.Background(), opaConfig, params.Logger)
-
 	if err != nil {
 		log.Fatalf("No se pudo inicializar el cliente OPA: %v", err)
 	}
@@ -89,7 +88,7 @@ func NewHttpApi(params Params) {
 
 	params.Router.Handle("GET /status", use(params.Status))
 	params.Router.Handle("GET /health", use(health.NewProbe(nil)))
-	//router.Handle("GET /live", use(health.NewProbe(nil)))
+	// router.Handle("GET /live", use(health.NewProbe(nil)))
 	params.Router.Handle("GET /ready", use(health.NewProbe(map[string]port.Checker{
 		"s3":       params.S3Checker,
 		"ssm":      params.SSMChecker,
@@ -120,13 +119,20 @@ func NewHttpApi(params Params) {
 	api.HandleFunc("GET /api/entry/export", params.Export.Export)
 	api.HandleFunc("DELETE /api/entry/key", params.Entry.DeleteKey)
 
-	api.HandleFunc("GET /api/entry/secret-value", params.Entry.RetrieveSecretValue)
+	// TODO: change to /api/entry/resolve for backends parameterstore, parameterstore_secure
+	api.HandleFunc("GET /api/entry/secret-value", params.Entry.Resolve)
+	api.HandleFunc("GET /api/entry/resolve", params.Entry.Resolve)
 
-	api.HandleFunc("GET /api/track/key", params.Entry.Tracking)
+	api.HandleFunc("POST /api/entry/lookup", params.Entry.RetrieveMany)
 
+	api.HandleFunc("GET /api/track/key", params.Tracker.Tracking)
+
+	// Deprecated: Use endpoint /api/prefix
 	api.HandleFunc("GET /api/static/environments", params.Static.Environments)
 
-	//swagger.yaml
+	api.HandleFunc("GET /api/prefix/resolve", params.PrefixConfigHandler.GetByPrefix)
+	api.HandleFunc("GET /api/prefix", params.PrefixConfigHandler.List)
+	api.HandleFunc("GET /api/prefix/backends", params.PrefixConfigHandler.ListBackends)
 
 	useAuth := middleware.Chain(
 		append(

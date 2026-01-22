@@ -3,9 +3,11 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+
 	"nbox/internal/application"
 	"nbox/internal/domain"
-	"net/http"
 )
 
 func (a Authn) tryBasicAuth(r *http.Request) (context.Context, error) {
@@ -15,17 +17,15 @@ func (a Authn) tryBasicAuth(r *http.Request) (context.Context, error) {
 	}
 
 	user, err := a.repository.ValidatePassword(r.Context(), username, pass)
-
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) || errors.Is(err, domain.ErrInvalidPassword) {
 			return nil, ErrInvalidCredentials
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to validate password: %w", err)
 	}
 
 	return application.NewContextWithUser(r.Context(), application.User{
 		Name:  user.Username,
 		Roles: user.Roles,
 	}), nil
-
 }

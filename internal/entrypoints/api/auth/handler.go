@@ -3,16 +3,14 @@ package auth
 import (
 	"encoding/json"
 	"errors"
-	"nbox/internal/domain"
 	"net/http"
 	"time"
 
-	"go.uber.org/zap"
-
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
-
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	_ "github.com/norlis/httpgate/pkg/kit/problem"
+	"go.uber.org/zap"
+	"nbox/internal/domain"
 )
 
 type Claims struct {
@@ -37,10 +35,9 @@ type TokenRequest struct {
 // @Success 200 {object} object{token=string} "Token generated successfully"
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/auth/token [post]
+// @Router /api/auth/token [post].
 func (a Authn) TokenHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-
 		payload := &TokenRequest{}
 
 		if err := json.NewDecoder(r.Body).Decode(payload); err != nil {

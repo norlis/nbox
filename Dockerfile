@@ -33,7 +33,7 @@ RUN apk --update add ca-certificates
 #			       #
 ################################
 #FROM golang:1.22 AS prep-build
-FROM public.ecr.aws/docker/library/golang:1.24 AS prep-build
+FROM public.ecr.aws/docker/library/golang:1.25 AS prep-build
 
 ARG TARGETARCH
 
