@@ -31,6 +31,6 @@ func NewSsmClient(cfg *aws.Config) *ssm.Client {
 	return ssm.NewFromConfig(*cfg)
 }
 
-//func NewSnsClient(cfg *aws.Config) *sns.Client {
+// func NewSnsClient(cfg *aws.Config) *sns.Client {
 //	return sns.NewFromConfig(*cfg)
 //}

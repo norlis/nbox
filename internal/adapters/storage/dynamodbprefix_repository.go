@@ -2,12 +2,8 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"nbox/internal/application"
-	"nbox/internal/domain"
-	"nbox/internal/domain/backend"
-	"nbox/internal/usecases"
-	"nbox/pkg/resiliency"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +13,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
+	"nbox/internal/application"
+	"nbox/internal/domain"
+	"nbox/internal/domain/backend"
+	"nbox/internal/usecases"
+	"nbox/pkg/resiliency"
 )
 
 type dynamoPrefixConfigRepository struct {
@@ -38,7 +39,6 @@ func NewDynamoPrefixConfigRepository(
 	pathUseCase *usecases.PathUseCase,
 	config *application.Config,
 ) domain.PrefixConfigRepository {
-
 	guard := resiliency.NewGuard(resiliency.GuardConfig{
 		MaxConcurrency:           50, // High concurrency allowed for reads
 		MaxRetries:               3,
@@ -70,7 +70,7 @@ func (d *dynamoPrefixConfigRepository) GetByPrefix(ctx context.Context, prefix s
 	// Validate and clean input
 	cleanKey := strings.Trim(prefix, "/")
 	if cleanKey == "" {
-		return nil, fmt.Errorf("prefix cannot be empty")
+		return nil, errors.New("prefix cannot be empty")
 	}
 
 	// 1. Generate hierarchical candidates
@@ -103,13 +103,12 @@ func (d *dynamoPrefixConfigRepository) GetByPrefix(ctx context.Context, prefix s
 		d.logger.Error("All candidate marshals failed",
 			zap.String("prefix", cleanKey),
 			zap.Int("failed_count", failedMarshals))
-		return nil, fmt.Errorf("failed to marshal any candidates")
+		return nil, errors.New("failed to marshal any candidates")
 	}
 
 	// 3. Execute BatchGetItem with retry/circuit breaker
-	//items, err := d.batchGet(ctx, keys)
+	// items, err := d.batchGet(ctx, keys)
 	items, err := d.dynamodbKit.BatchGet(ctx, d.tableName, keys)
-
 	if err != nil {
 		d.logger.Error("BatchGetItem failed",
 			zap.String("prefix", cleanKey),
@@ -269,7 +268,7 @@ func (d *dynamoPrefixConfigRepository) Upsert(ctx context.Context, prefixes []ba
 // batchGet handles retry and throttling logic for DynamoDB BatchGetItem operations.
 // It processes unprocessed keys across multiple iterations until all items are retrieved
 // or the Guard exhausts retries.
-//func (d *dynamoPrefixConfigRepository) batchGet(ctx context.Context, keys []map[string]types.AttributeValue) ([]map[string]types.AttributeValue, error) {
+// func (d *dynamoPrefixConfigRepository) batchGet(ctx context.Context, keys []map[string]types.AttributeValue) ([]map[string]types.AttributeValue, error) {
 //
 //	var results []map[string]types.AttributeValue
 //	var unprocessed = keys

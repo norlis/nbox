@@ -23,4 +23,10 @@ import (
 	_ "github.com/go-delve/delve/cmd/dlv"
 	_ "golang.org/x/tools/gopls"
 	_ "gotest.tools/gotestsum"
+
+	// open api
+	_ "github.com/swaggo/swag/cmd/swag"
+
+	// validations
+	_ "cuelang.org/go/cmd/cue"
 )

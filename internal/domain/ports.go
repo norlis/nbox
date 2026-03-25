@@ -2,10 +2,11 @@ package domain
 
 import (
 	"context"
+	"time"
+
 	"nbox/internal/domain/backend"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
-	"time"
 )
 
 type RetrieveConfig struct {

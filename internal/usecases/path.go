@@ -70,7 +70,11 @@ func (p *PathUseCase) Concat(path, key string) string {
 	if unp == "" {
 		return key
 	}
-	return pkgPath.Join(path, key)
+	fullKey := pkgPath.Join(path, key)
+	if strings.HasSuffix(key, "/") {
+		fullKey += "/"
+	}
+	return fullKey
 }
 
 func (p *PathUseCase) NormalizeKey(key string) string {

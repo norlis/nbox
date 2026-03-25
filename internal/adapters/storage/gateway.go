@@ -5,14 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"nbox/internal/domain"
-	"nbox/internal/domain/backend"
-	"nbox/internal/domain/models"
-	"nbox/internal/domain/models/operations"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
+	"nbox/internal/domain"
+	"nbox/internal/domain/backend"
+	"nbox/internal/domain/models"
+	"nbox/internal/domain/models/operations"
 )
 
 type Gateway struct {
@@ -35,12 +35,12 @@ func NewStorageGateway(
 	}
 }
 
-func (g *Gateway) calculateChecksum(entry *models.Entry) {
+func (g *Gateway) calculateFingerprint(entry *models.Entry) {
 	if entry.Metadata == nil {
 		entry.Metadata = &models.Metadata{}
 	}
 	hash := sha256.Sum256([]byte(entry.Value))
-	entry.Metadata.Hash = hex.EncodeToString(hash[:])
+	entry.Metadata.Fingerprint = hex.EncodeToString(hash[:])
 }
 
 func (g *Gateway) RegisterBackend(adapter domain.EntryPartialStore) {
@@ -71,15 +71,15 @@ func (g *Gateway) RetrieveMany(ctx context.Context, keys []string) (map[string]*
 	return g.index.RetrieveMany(ctx, keys)
 }
 
-// Retrieve Index First
+// Retrieve Index First.
 func (g *Gateway) Retrieve(ctx context.Context, key string, _ ...domain.RetrieveOption) (*models.Entry, error) {
 	return g.index.Retrieve(ctx, key)
 }
 
-// Resolve optimizado
-// Resolve obtiene la metadata del índice y el valor real del backend
+// Resolve optimized
+// Resolve gets metadata from the index and the actual value from the backend.
 func (g *Gateway) Resolve(ctx context.Context, key string) (*models.Entry, error) {
-	// 1. Recuperamos la "cáscara" y metadata desde DynamoDB (Índice)
+	// 1. Retrieve the "shell" and metadata from DynamoDB (Index)
 	indexEntry, err := g.index.Retrieve(ctx, key)
 	if err != nil {
 		return nil, err
@@ -90,30 +90,30 @@ func (g *Gateway) Resolve(ctx context.Context, key string) (*models.Entry, error
 
 	backendType := indexEntry.Metadata.StorageBackend
 
-	// 2. Si el backend es local (Dynamo) o Legacy, ya tenemos el valor final
+	// If the backend is local (Dynamo) or Legacy, we already have the final value
 	if backendType == "" || backendType == backend.BackendDynamoDB {
-		// Opcional: Si quieres asegurarte de que Secure sea consistente
+		// Optional: If you want to ensure Secure is consistent
 		// indexEntry.Secure = false
 		return indexEntry, nil
 	}
 
-	// 3. Buscamos el adaptador correcto
+	// Find the correct adapter
 	store, ok := g.backends[backendType]
 	if !ok {
 		g.logger.Error("Critical: Index points to unknown backend",
 			zap.String("key", key),
 			zap.String("backend", string(backendType)))
-		return nil, fmt.Errorf("backend no registrado: %s", backendType)
+		return nil, fmt.Errorf("backend not registered: %s", backendType)
 	}
 
-	// 4. Obtenemos SOLO el valor secreto (bytes) desde la fuente (SSM)
-	// No usamos store.Retrieve() para evitar una llamada extra y para confiar en la metadata del índice.
+	// 4. Get ONLY the secret value (bytes) from the source (SSM)
+	// We don't use store.Retrieve() to avoid an extra call and to trust the index metadata.
 	entry, err := store.Resolve(ctx, key)
 	if err != nil {
 		return nil, err
 	}
 
-	// 5. "Hidratamos" el entry del índice con el entry externo
+	// "Hydrate" the index entry with the external entry
 	indexEntry.Value = entry.Value
 	indexEntry.Secure = entry.Secure
 
@@ -121,44 +121,44 @@ func (g *Gateway) Resolve(ctx context.Context, key string) (*models.Entry, error
 }
 
 func (g *Gateway) Delete(ctx context.Context, key string) error {
-	store, err := g.resolveBackend(ctx, key, false) // TODO: mejorar esto, en este paso no se sabe si es un secret
+	store, err := g.resolveBackend(ctx, key, false) // TODO: improve this, at this step we don't know if it's a secret
 	if err != nil {
 		return err
 	}
 
-	// 1. Borrar de la fuente (SSM)
+	// Delete from the source (SSM)
 	if err := store.Delete(ctx, key); err != nil {
 		return err
 	}
 
-	// 2. Borrar del índice (DynamoDB) si son distintos
+	// Delete from the index (DynamoDB) if they are different
 	if store != g.index {
-		// Ignoramos error de índice para no bloquear, o lo manejamos según política
+		// Ignore index error to avoid blocking, or handle according to policy
 		_ = g.index.Delete(ctx, key)
 	}
 
 	return nil
 }
 
-// List SIEMPRE usa el Índice Global (DynamoDB)
+// List ALWAYS uses the Global Index (DynamoDB).
 func (g *Gateway) List(ctx context.Context, prefix string) ([]models.Entry, error) {
-	// No importa dónde estén guardados los datos reales, DynamoDB tiene la copia indexada.
+	// It doesn't matter where the actual data is stored, DynamoDB has the indexed copy.
 	return g.index.List(ctx, prefix)
 }
 
 func (g *Gateway) Upsert(ctx context.Context, entries []models.Entry) operations.Results {
 	results := make(operations.Results)
 
-	// Listas para separar el trabajo
+	// Lists to separate work
 	externalWrites := make(map[domain.EntryPartialStore][]models.Entry)
 	toIndex := make([]models.Entry, 0, len(entries))
 
-	// 1. CLASIFICACIÓN (Routing)
+	// CLASSIFICATION (Routing)
 	for _, entry := range entries {
 		entry.Metadata = &models.Metadata{
 			UpdatedAt: time.Now().UTC(),
 		}
-		g.calculateChecksum(&entry) // calcular checksum
+		g.calculateFingerprint(&entry) // calculator checksum
 
 		store, err := g.resolveBackend(ctx, entry.Key, entry.Secure)
 		if err != nil {
@@ -166,43 +166,43 @@ func (g *Gateway) Upsert(ctx context.Context, entries []models.Entry) operations
 			continue
 		}
 
-		// Si el destino ES el índice (DynamoDB), va directo a la cola de indexación.
+		// If the destination IS the index (DynamoDB), it goes directly to the indexing queue.
 		if store == g.index {
-			// Aseguramos que tenga metadata base si no la tiene
+			// Ensure it has base metadata if it doesn't
 			if entry.Metadata == nil {
 				entry.Metadata = &models.Metadata{}
 			}
 			entry.Metadata.StorageBackend = store.BackendType()
 			toIndex = append(toIndex, entry)
 		} else {
-			// Si es externo (SSM), lo encolamos para ejecución remota
+			// If external (SSM), queue it for remote execution
 			externalWrites[store] = append(externalWrites[store], entry)
 		}
 	}
 
-	// 2. EJECUCIÓN EXTERNA (Parallel Fan-Out)
+	// EXTERNAL EXECUTION (Parallel Fan-Out)
 	var wg sync.WaitGroup
-	var mu sync.Mutex // Para proteger 'toIndex' y 'results'
+	var mu sync.Mutex // To protect 'toIndex' and 'results'
 
 	for store, batch := range externalWrites {
 		wg.Add(1)
 		go func(s domain.EntryPartialStore, entries []models.Entry) {
 			defer wg.Done()
 
-			// Escribimos en SSM
+			// Write to SSM
 			opResults := s.Upsert(ctx, entries)
 
 			mu.Lock()
 			defer mu.Unlock()
 
 			for key, res := range opResults {
-				// Guardamos el resultado de la operación (éxito/fallo)
+				// Save the operation result (success/failure)
 				results[key] = res
 
-				// Si fue exitoso, preparamos la entrada para el índice
+				// If successful, prepare the entry for the index
 				if res.Err == nil {
-					// CRÍTICO: Usamos el Output del backend (que trae el ARN y Metadata)
-					// Si por alguna razón no hay Output, usamos la entry original (fallback)
+					// CRITICAL: Use the backend's Output (which contains the ARN and Metadata)
+					// If for some reason there's no Output, use the original entry (fallback)
 					if res.Output != nil {
 						toIndex = append(toIndex, *res.Output)
 					} else {
@@ -215,28 +215,28 @@ func (g *Gateway) Upsert(ctx context.Context, entries []models.Entry) operations
 
 	wg.Wait()
 
-	// 3. INDEXACIÓN UNIFICADA (Fan-In)
-	// Ahora 'toIndex' tiene nativo de Dynamo Y las referencias de SSM.
-	// Hacemos una sola llamada masiva a DynamoDB.
+	// UNIFIED INDEXING (Fan-In)
+	// Now 'toIndex' has native Dynamo entries AND SSM references.
+	// We make a single massive call to DynamoDB.
 
 	if len(toIndex) > 0 {
 		idxResults := g.index.Upsert(ctx, toIndex)
 
-		// Mezclamos los resultados del índice.
-		// Si falló la indexación de algo que ya se guardó en SSM, lo marcamos como error parcial o warning.
+		// Merge the index results.
+		// If indexing failed for something already saved in SSM, mark it as partial error or warning.
 		for key, res := range idxResults {
 			if res.Err != nil {
-				// Si ya teníamos un resultado de éxito (de SSM), esto es un error de "Consistencia Eventual"
+				// If we already had a success result (from SSM), this is an "Eventual Consistency" error
 				if existingRes, exists := results[key]; exists && existingRes.Err == nil {
 					g.logger.Warn("Data saved in backend but failed to index", zap.String("key", key), zap.Error(res.Err))
-					// Opcional: Sobrescribir el error en results si quieres ser estricto
+					// Optional: Overwrite the error in results if you want to be strict
 					// results[key] = res
 				} else {
-					// Si era nativo de Dynamo, este es el error principal
+					// If it was native Dynamo, this is the main error
 					results[key] = res
 				}
 			} else {
-				// Si era nativo de Dynamo y salió bien, lo registramos
+				// If it was native Dynamo and succeeded, register it
 				if _, exists := results[key]; !exists {
 					results[key] = res
 				}
@@ -247,7 +247,7 @@ func (g *Gateway) Upsert(ctx context.Context, entries []models.Entry) operations
 	return results
 }
 
-// Helper simple para buscar en slice (puedes optimizarlo con un map si el batch es grande)
+// Simple helper to search in slice (can be optimized with a map if the batch is large).
 func findEntryIndex(entries []models.Entry, key string) int {
 	for i, e := range entries {
 		if e.Key == key {

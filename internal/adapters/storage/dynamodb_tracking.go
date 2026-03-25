@@ -3,9 +3,6 @@ package storage
 import (
 	"context"
 	"fmt"
-	"nbox/internal/application"
-	"nbox/internal/domain"
-	"nbox/internal/domain/models"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -14,6 +11,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
+	"nbox/internal/application"
+	"nbox/internal/domain"
+	"nbox/internal/domain/models"
 )
 
 type DynamoDBTracking struct {

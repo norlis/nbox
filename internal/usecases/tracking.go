@@ -3,15 +3,15 @@ package usecases
 import (
 	"context"
 	"encoding/json"
+	"time"
+
+	"github.com/norlis/httpgate/pkg/adapter/apidriven/middleware"
+	"go.uber.org/zap"
 	"nbox/internal/application"
 	"nbox/internal/domain"
 	"nbox/internal/domain/backend"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
-	"time"
-
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/middleware"
-	"go.uber.org/zap"
 )
 
 type entryManagerWithTracking struct {
@@ -90,7 +90,6 @@ func (e *entryManagerWithTracking) registerChanges(
 	results operations.Results,
 	entryIndex map[string]models.Entry,
 ) {
-
 	var trackingBatch []models.Tracking
 	now := time.Now().UTC()
 
@@ -126,7 +125,7 @@ func (e *entryManagerWithTracking) registerChanges(
 			trackItem.StorageBackend = res.Output.Metadata.StorageBackend
 			trackItem.Action = res.Output.Metadata.Action
 			trackItem.Version = res.Output.Metadata.Version
-			trackItem.Hash = res.Output.Metadata.Hash
+			trackItem.Hash = res.Output.Metadata.Fingerprint
 		}
 
 		trackingBatch = append(trackingBatch, trackItem)

@@ -24,7 +24,7 @@ const (
 	MsgInputSeparator    = "...................................."
 	MsgOutputSeparator   = "------------------------------------"
 	MsgInputPrompt       = "› Ingresa la contraseña a hashear: "
-	MsgSuccess           = "✅ Hash generado con éxito:"
+	MsgSuccess           = "✅ Fingerprint generado con éxito:"
 	ErrEmptyInput        = "La contraseña no puede estar vacía."
 	ErrFmtInvalidCost    = "Error: el costo debe estar entre %d y %d."
 	ErrFmtReadInput      = "Error al leer la contraseña: %v"

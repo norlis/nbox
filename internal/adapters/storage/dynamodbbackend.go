@@ -4,12 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"nbox/internal/application"
-	"nbox/internal/domain"
-	"nbox/internal/domain/backend"
-	"nbox/internal/domain/models"
-	"nbox/internal/domain/models/operations"
-	"nbox/internal/usecases"
 	"strings"
 	"time"
 
@@ -19,6 +13,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
+	"nbox/internal/application"
+	"nbox/internal/domain"
+	"nbox/internal/domain/backend"
+	"nbox/internal/domain/models"
+	"nbox/internal/domain/models/operations"
+	"nbox/internal/usecases"
 )
 
 const (
@@ -26,7 +26,7 @@ const (
 	BatchSize          = 25
 )
 
-// Estructuras internas para mapeo a DynamoDB
+// Internal structures for DynamoDB mapping.
 type RecordBase struct {
 	Key      string          `dynamodbav:"Key"`
 	Value    []byte          `dynamodbav:"Value"`
@@ -38,8 +38,8 @@ type Record struct {
 	*RecordBase
 }
 
-// DynamoDBBackend implementa EntryFullStore (Upsert, Retrieve, List, Delete)
-// Nota: Tracking ya no es responsabilidad directa de este struct.
+// DynamoDBBackend implements EntryFullStore (Upsert, Retrieve, List, Delete)
+// Note: Tracking is no longer the direct responsibility of this struct.
 type DynamoDBBackend struct {
 	client      *dynamodb.Client
 	config      *application.Config
@@ -76,7 +76,7 @@ func (d *DynamoDBBackend) RetrieveMany(ctx context.Context, keys []string) (map[
 	attributes := make([]map[string]types.AttributeValue, 0, len(keys))
 
 	for _, fullKey := range keys {
-		// Usamos tu pathUseCase para separar "carpeta/variable" en "carpeta" y "variable"
+		// Use pathUseCase to split "folder/variable" into "folder" and "variable"
 		path, err := attributevalue.Marshal(d.pathUseCase.PathWithoutKey(fullKey))
 		if err != nil {
 			d.logger.Error("Failed to marshal path", zap.String("key", fullKey), zap.Error(err))
@@ -96,8 +96,8 @@ func (d *DynamoDBBackend) RetrieveMany(ctx context.Context, keys []string) (map[
 	}
 	items, err := d.dynamodbKit.BatchGet(ctx, d.config.EntryTableName, attributes)
 	if err != nil {
-		// Si falla el batch completo (después de reintentos), retornamos error.
-		// El Gateway decidirá si degradar el servicio o fallar.
+		// If the entire batch fails (after retries), return error.
+		// The Gateway will decide whether to degrade the service or fail.
 		return nil, fmt.Errorf("retrieve many failed: %w", err)
 	}
 
@@ -123,14 +123,14 @@ func (d *DynamoDBBackend) RetrieveMany(ctx context.Context, keys []string) (map[
 	return results, nil
 }
 
-// Upsert inserta o actualiza entradas en DynamoDB.
-// Solo se preocupa por el estado ACTUAL. El tracking se maneja externamente.
+// Upsert inserts or updates entries in DynamoDB.
+// It only cares about the CURRENT state. Tracking is handled externally.
 func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) operations.Results {
 	results := make(operations.Results, len(entries))
 
 	uniqueRequests := make(map[string]types.WriteRequest)
 
-	//requests := make([]types.WriteRequest, 0, len(entries))
+	// requests := make([]types.WriteRequest, 0, len(entries))
 
 	updatedBy := "ghost"
 	if user, ok := application.UserFromContext(ctx); ok {
@@ -160,15 +160,15 @@ func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) op
 					Secure:         entry.Secure,
 					Action:         "upsert",
 					StorageBackend: storageType,
-					Hash:           entry.Metadata.Hash,
+					Fingerprint:    entry.Metadata.Fingerprint,
 				},
 			},
 		}
 
-		// Marshal individual con manejo de error inmediato
+		// Individual marshal with immediate error handling
 		item, err := attributevalue.MarshalMap(record)
 		if err != nil {
-			// Marcamos ESTA entrada específica como fallida y no la agregamos al batch
+			// Mark THIS specific entry as failed and don't add it to the batch
 			d.logger.Error("DynamoDB Marshal failed", zap.String("key", sanitizedKey), zap.Error(err))
 			results.Add(sanitizedKey, operations.Failed, fmt.Errorf("marshal error: %w", err))
 			continue
@@ -178,8 +178,8 @@ func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) op
 			PutRequest: &types.PutRequest{Item: item},
 		}
 
-		// Asumimos éxito por defecto (Pending)
-		//results.Add(sanitizedKey, operations.Updated, nil)
+		// Assume success by default (Pending)
+		// results.Add(sanitizedKey, operations.Updated, nil)
 		results.AddWithOutput(sanitizedKey, operations.Updated, nil, &entry)
 
 		for _, prefix := range d.pathUseCase.Prefixes(sanitizedKey) {
@@ -206,9 +206,7 @@ func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) op
 					PutRequest: &types.PutRequest{Item: pItem},
 				}
 			}
-
 		}
-
 	}
 
 	requests := make([]types.WriteRequest, 0, len(uniqueRequests))
@@ -223,8 +221,8 @@ func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) op
 	failedItems, err := d.dynamodbKit.BatchWrite(ctx, d.config.EntryTableName, requests)
 
 	if len(failedItems) > 0 {
-		// Solo marcamos como fallidos los que retornó dynamodbKit.BatchWrite
-		// El resto se queda con el estado "Updated" que pusimos al inicio (optimistic success)
+		// Only mark as failed those returned by dynamodbKit.BatchWrite
+		// The rest keep the "Updated" status we set initially (optimistic success)
 		commonErr := err
 		if commonErr == nil {
 			commonErr = errors.New("write operation failed after retries")
@@ -321,8 +319,8 @@ func (d *DynamoDBBackend) List(ctx context.Context, prefix string) ([]models.Ent
 }
 
 func (d *DynamoDBBackend) Delete(ctx context.Context, key string) error {
-	// 1. Borrar el item exacto (si existe)
-	// Es barato intentar borrarlo directamente
+	// Delete the exact item (if it exists)
+	// It's cheap to try deleting it directly
 	p := d.pathUseCase.PathWithoutKey(key)
 	k := d.pathUseCase.BaseKey(key)
 
@@ -335,12 +333,12 @@ func (d *DynamoDBBackend) Delete(ctx context.Context, key string) error {
 		},
 	}
 
-	// Intentamos borrar el root primero
+	// Try to delete the root first
 	if _, err := d.dynamodbKit.BatchWrite(ctx, d.config.EntryTableName, []types.WriteRequest{rootDelete}); err != nil {
 		return fmt.Errorf("failed to delete root item: %w", err)
 	}
 
-	// 2. Early return check: Verificar si hay hijos antes de paginar
+	// Early return check: Verificar si hay hijos antes de paginar
 	prefix := d.pathUseCase.EscapeEmptyPath(strings.TrimSuffix(key, "/"))
 
 	keyEx := expression.Key("Path").Equal(expression.Value(prefix))
@@ -356,14 +354,14 @@ func (d *DynamoDBBackend) Delete(ctx context.Context, key string) error {
 		Select:                    types.SelectCount,
 	})
 	if err != nil {
-		// Si falla el check, continuamos con el proceso normal (no es fatal)
+		// If the check fails, continue with the normal process (not fatal)
 		d.logger.Warn("Failed to check for children, proceeding with full deletion", zap.Error(err))
 	} else if peekResult.Count == 0 {
 		// No hay hijos, retorno temprano
 		return nil
 	}
 
-	// 3. Borrar hijos (Paginación eficiente con ProjectionExpression)
+	// Delete children (Efficient pagination with ProjectionExpression)
 	proj := expression.NamesList(expression.Name("Path"), expression.Name("Key"))
 	expr, _ = expression.NewBuilder().
 		WithKeyCondition(keyEx).
@@ -384,7 +382,7 @@ func (d *DynamoDBBackend) Delete(ctx context.Context, key string) error {
 			return fmt.Errorf("failed to list children for deletion: %w", err)
 		}
 
-		// Convertir página actual a Batch Delete Requests
+		// Convert current page to Batch Delete Requests
 		batchReqs := make([]types.WriteRequest, 0, len(page.Items))
 
 		var records []Record
@@ -393,9 +391,9 @@ func (d *DynamoDBBackend) Delete(ctx context.Context, key string) error {
 		}
 
 		for _, r := range records {
-			// Reconstruir claves para DeleteRequest
+			// Reconstruct keys for DeleteRequest
 			pAv, _ := attributevalue.Marshal(r.Path)
-			kAv, _ := attributevalue.Marshal(r.RecordBase.Key)
+			kAv, _ := attributevalue.Marshal(r.Key)
 
 			batchReqs = append(batchReqs, types.WriteRequest{
 				DeleteRequest: &types.DeleteRequest{
@@ -404,7 +402,7 @@ func (d *DynamoDBBackend) Delete(ctx context.Context, key string) error {
 			})
 		}
 
-		// 3. Ejecutar borrado de ESTA página antes de pedir la siguiente
+		// Execute deletion of THIS page before requesting the next one
 		if len(batchReqs) > 0 {
 			failed, err := d.dynamodbKit.BatchWrite(ctx, d.config.EntryTableName, batchReqs)
 			if err != nil {
@@ -421,7 +419,7 @@ func mustMarshal(v string) types.AttributeValue {
 	return av
 }
 
-// Helpers privados
+// Private helpers
 
 func (d *DynamoDBBackend) sanitize(key string) string {
 	key = strings.ToLower(key)
@@ -430,7 +428,7 @@ func (d *DynamoDBBackend) sanitize(key string) string {
 	return key
 }
 
-// extractKeyFromRequest reconstruye la key original (app/foo) desde un WriteRequest de Dynamo
+// extractKeyFromRequest reconstruye la key original (app/foo) desde un WriteRequest de Dynamo.
 func (d *DynamoDBBackend) extractKeyFromRequest(req types.WriteRequest) string {
 	var item map[string]types.AttributeValue
 
@@ -445,7 +443,7 @@ func (d *DynamoDBBackend) extractKeyFromRequest(req types.WriteRequest) string {
 	}
 
 	var r Record
-	// Unmarshal solo de los campos de clave para ser eficiente
+	// Unmarshal only key fields for efficiency
 	if err := attributevalue.UnmarshalMap(item, &r); err != nil {
 		d.logger.Warn("Failed to extract key from failed request",
 			zap.Error(err),
@@ -453,6 +451,6 @@ func (d *DynamoDBBackend) extractKeyFromRequest(req types.WriteRequest) string {
 		return "unknown"
 	}
 
-	// Reconstruir usando el pathUseCase (Path + BaseKey)
-	return d.pathUseCase.Concat(r.Path, r.RecordBase.Key)
+	// Reconstruct using pathUseCase (Path + BaseKey)
+	return d.pathUseCase.Concat(r.Path, r.Key)
 }

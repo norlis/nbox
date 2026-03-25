@@ -2,8 +2,9 @@ package models
 
 import (
 	"fmt"
-	"nbox/internal/domain/backend"
 	"time"
+
+	"nbox/internal/domain/backend"
 )
 
 type EntryOutput struct {
@@ -13,11 +14,11 @@ type EntryOutput struct {
 }
 
 type Entry struct {
-	Path     string    `json:"path,omitempty"                     swaggerignore:"true" yaml:"path,omitempty"`
-	Key      string    `example:"development/service/var-example" json:"key"           yaml:"key"`
-	Value    string    `example:"value 123"                       json:"value"         yaml:"value"`
-	Secure   bool      `example:"false"                           json:"secure"        yaml:"secure"`
-	Metadata *Metadata `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+	Path     string    `json:"path,omitempty"                     swaggerignore:"true"      yaml:"path,omitempty"`
+	Key      string    `example:"development/service/var-example" json:"key"                yaml:"key"`
+	Value    string    `example:"value 123"                       json:"value"              yaml:"value"`
+	Secure   bool      `example:"false"                           json:"secure"             yaml:"secure"`
+	Metadata *Metadata `json:"metadata,omitempty"                 yaml:"metadata,omitempty"`
 }
 
 func (e *Entry) String() string {
@@ -25,15 +26,15 @@ func (e *Entry) String() string {
 }
 
 type Tracking struct {
-	Key            string                     `json:"key" dynamodbav:"Key"`
-	Value          string                     `json:"value" dynamodbav:"Value"`
-	Secure         bool                       `json:"secure" dynamodbav:"Secure"`
-	StorageBackend backend.StorageBackendType `json:"storageBackend" dynamodbav:"StorageBackend"`
-	UpdatedAt      time.Time                  `json:"updatedAt" dynamodbav:"Timestamp"` //,unixtime
-	UpdatedBy      string                     `json:"updatedBy" dynamodbav:"UpdatedBy"`
-	Action         string                     `json:"action,omitempty" dynamodbav:"Action"`
-	Version        int64                      `json:"version,omitempty" dynamodbav:"Version,omitempty"`
-	Hash           string                     `dynamodbav:"Hash,omitempty"      json:"hash,omitempty"`
+	Key            string                     `dynamodbav:"Key"                   json:"key"`
+	Value          string                     `dynamodbav:"Value"                 json:"value"`
+	Secure         bool                       `dynamodbav:"Secure"                json:"secure"`
+	StorageBackend backend.StorageBackendType `dynamodbav:"StorageBackend"        json:"storageBackend"`
+	UpdatedAt      time.Time                  `dynamodbav:"Timestamp"             json:"updatedAt"` // ,unixtime
+	UpdatedBy      string                     `dynamodbav:"UpdatedBy"             json:"updatedBy"`
+	Action         string                     `dynamodbav:"Action"                json:"action,omitempty"`
+	Version        int64                      `dynamodbav:"Version,omitempty"     json:"version,omitempty"`
+	Hash           string                     `dynamodbav:"Fingerprint,omitempty" json:"hash,omitempty"`
 }
 
 func (e *Tracking) String() string {

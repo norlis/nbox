@@ -3,13 +3,14 @@ package handlers
 import (
 	"errors"
 	"fmt"
-	"nbox/internal/domain"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
+	"nbox/internal/domain"
+	_ "nbox/internal/domain/models"
 )
 
 type TrackHandler struct {
@@ -74,7 +75,6 @@ func (h *TrackHandler) Tracking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	history, err := h.tracker.History(r.Context(), key, opts...)
-
 	if err != nil {
 		h.render.Error(w, r, err, presenters.WithStatus(http.StatusInternalServerError))
 		return
@@ -85,7 +85,7 @@ func (h *TrackHandler) Tracking(w http.ResponseWriter, r *http.Request) {
 
 // extendedUnits for units not supported by time.ParseDuration.
 // Note: Go intentionally omits d/w/M due to variable lengths (DST, leap years, etc.)
-// We use fixed approximations: 1d=24h, 1w=168h, 1M=720h
+// We use fixed approximations: 1d=24h, 1w=168h, 1M=720h.
 var extendedUnits = map[string]time.Duration{
 	"d": 24 * time.Hour,
 	"w": 7 * 24 * time.Hour,
@@ -107,8 +107,8 @@ func (h *TrackHandler) parseTimeParam(input string) (time.Time, error) {
 
 	// 2. Try extended units (d, w, M)
 	for suffix, duration := range extendedUnits {
-		if strings.HasSuffix(input, suffix) {
-			numStr := strings.TrimSuffix(input, suffix)
+		if before, ok := strings.CutSuffix(input, suffix); ok {
+			numStr := before
 			if num, err := strconv.ParseFloat(numStr, 64); err == nil {
 				return time.Now().UTC().Add(-time.Duration(float64(duration) * num)), nil
 			}

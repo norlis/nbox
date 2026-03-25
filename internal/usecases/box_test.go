@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"nbox/internal/domain"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
+	"nbox/internal/domain/validation"
 )
 
 type mockTemplateAdapter struct{}
@@ -20,8 +22,12 @@ func (m *mockEntryAdapter) Upsert(_ context.Context, _ []models.Entry) operation
 	return nil
 }
 
-func (m *mockEntryAdapter) Retrieve(_ context.Context, _ string) (*models.Entry, error) {
+func (m *mockEntryAdapter) Retrieve(_ context.Context, _ string, _ ...domain.RetrieveOption) (*models.Entry, error) {
 	return nil, errors.New("mock retrieval error")
+}
+
+func (m *mockEntryAdapter) Resolve(_ context.Context, _ string) (*models.Entry, error) {
+	return nil, nil
 }
 
 func (m *mockEntryAdapter) List(_ context.Context, _ string) ([]models.Entry, error) {
@@ -40,11 +46,13 @@ func (m *mockEntryAdapter) Delete(_ context.Context, _ string) error {
 	return nil
 }
 
-func (m *mockEntryAdapter) Tracking(_ context.Context, _ string) ([]models.Tracking, error) {
+func (m *mockEntryAdapter) RetrieveMany(_ context.Context, _ []string) (map[string]*models.Entry, error) {
 	return nil, nil
 }
 
-func (m *mockTemplateAdapter) UpsertBox(ctx context.Context, box *models.Box) []string {
+func (m *mockEntryAdapter) RegisterBackend(_ domain.EntryPartialStore) {}
+
+func (m *mockTemplateAdapter) UpsertBox(_ context.Context, _ *models.Box) map[string]validation.Result {
 	return nil
 }
 
@@ -67,7 +75,7 @@ func TestBoxUseCase_BuildBox(t *testing.T) {
 	mockTemplate := &mockTemplateAdapter{}
 	mockEntry := &mockEntryAdapter{}
 
-	useCase := NewBox(mockTemplate, mockEntry, NewPathUseCase())
+	useCase := NewBox(mockTemplate, mockEntry, NewPathUseCase(), nil)
 	results, err := useCase.BuildBox(context.Background(), "test", "development", "test.json", map[string]string{})
 
 	fmt.Println(results)

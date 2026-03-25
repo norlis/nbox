@@ -13,7 +13,7 @@ import (
 	"golang.org/x/term"
 )
 
-// generateSecurePassword generates a cryptographically secure random password
+// generateSecurePassword generates a cryptographically secure random password.
 func generateSecurePassword(length int) (string, error) {
 	// Generate random bytes
 	bytes := make([]byte, length)
@@ -100,13 +100,13 @@ Examples:
 		}
 
 		// Create credentials structure
-		userInfo := map[string]interface{}{
+		userInfo := map[string]any{
 			"password": string(hashedPassword),
 			"active":   true,
 			"roles":    []string{},
 		}
 
-		credentials := map[string]interface{}{
+		credentials := map[string]any{
 			username: userInfo,
 		}
 

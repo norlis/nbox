@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	_ "nbox/internal/domain/models"
-	"nbox/pkg/resiliency"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -13,6 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/cenkalti/backoff/v4"
 	"go.uber.org/zap"
+	_ "nbox/internal/domain/models"
+	"nbox/pkg/resiliency"
 )
 
 const (
@@ -41,10 +41,7 @@ func (k *DynamodbKit) BatchWrite(ctx context.Context, tableName string, requests
 	var totalFailed []types.WriteRequest
 
 	for i := 0; i < len(requests); i += DynamodbBatchWriteSize {
-		end := i + DynamodbBatchWriteSize
-		if end > len(requests) {
-			end = len(requests)
-		}
+		end := min(i+DynamodbBatchWriteSize, len(requests))
 
 		chunk := requests[i:end]
 
@@ -54,7 +51,7 @@ func (k *DynamodbKit) BatchWrite(ctx context.Context, tableName string, requests
 		startTime := time.Now()
 
 		// Track unprocessed items in this chunk
-		var unprocessed = chunk
+		unprocessed := chunk
 
 		operation := func() error {
 			if len(unprocessed) == 0 {
@@ -105,7 +102,7 @@ func (k *DynamodbKit) BatchWrite(ctx context.Context, tableName string, requests
 	return nil, nil
 }
 
-// BatchGet uses Guard to handle both network errors and UnprocessedKeys (partial batch)
+// BatchGet uses Guard to handle both network errors and UnprocessedKeys (partial batch).
 func (k *DynamodbKit) BatchGet(
 	ctx context.Context,
 	tableName string,
@@ -119,10 +116,7 @@ func (k *DynamodbKit) BatchGet(
 
 	// Chunking: DynamoDB hard limit (100 items)
 	for i := 0; i < len(keys); i += BatchGetSize {
-		end := i + BatchGetSize
-		if end > len(keys) {
-			end = len(keys)
-		}
+		end := min(i+BatchGetSize, len(keys))
 
 		chunk := keys[i:end]
 		chunkResults, err := k.processGetChunk(ctx, tableName, chunk)
@@ -140,7 +134,6 @@ func (k *DynamodbKit) processGetChunk(
 	tableName string,
 	keys []map[string]types.AttributeValue,
 ) ([]map[string]types.AttributeValue, error) {
-
 	// Pre-allocate with expected capacity
 	chunkResults := make([]map[string]types.AttributeValue, 0, len(keys))
 
@@ -180,7 +173,6 @@ func (k *DynamodbKit) processGetChunk(
 		currentKeys = nil
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("batch get failed: %w", err)
 	}

@@ -6,13 +6,6 @@ import (
 	"log"
 	"net/http"
 
-	_ "nbox/docs"
-	"nbox/internal/adapters/amazonaws"
-	"nbox/internal/adapters/sse"
-	"nbox/internal/application"
-	"nbox/internal/entrypoints/api/auth"
-	"nbox/internal/entrypoints/api/handlers"
-
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/middleware"
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	"github.com/norlis/httpgate/pkg/adapter/opa"
@@ -21,6 +14,12 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
+	_ "nbox/docs"
+	"nbox/internal/adapters/amazonaws"
+	"nbox/internal/adapters/sse"
+	"nbox/internal/application"
+	"nbox/internal/entrypoints/api/auth"
+	"nbox/internal/entrypoints/api/handlers"
 )
 
 type Params struct {
@@ -41,11 +40,12 @@ type Params struct {
 	Export              *handlers.ExportHandler
 	PrefixConfigHandler *handlers.PrefixConfigHandler
 	Tracker             *handlers.TrackHandler
+	BoxSpec             *handlers.BoxSpecHandler
 }
 
 // NewHttpApi
 // @title           nbox API
-// @version         1.0
+// @version         2.0
 // @description     Esta es una API generada automáticamente con Swaggo.
 // @termsOfService  http://swagger.io/terms/
 // @contact.name   Norlis Viamonte
@@ -75,13 +75,13 @@ func NewHttpApi(params Params) {
 
 	opaConfig := opa.Config{
 		Query:        "data.authz.allow",
-		PoliciesPath: "policies/authz", // Directorio con authz.rego
+		PoliciesPath: "policies/authz", // directory with authz.rego
 		DataFiles:    []string{},
 	}
 
 	authz, err := opa.NewOpaSdkClientFromConfig(context.Background(), opaConfig, params.Logger)
 	if err != nil {
-		log.Fatalf("No se pudo inicializar el cliente OPA: %v", err)
+		log.Fatalf("The OPA client could not be initialized: %v", err)
 	}
 
 	use := middleware.Chain(base...)
@@ -106,12 +106,15 @@ func NewHttpApi(params Params) {
 
 	api := http.NewServeMux()
 
-	api.HandleFunc("POST /api/box", params.Box.UpsertBox)
+	api.HandleFunc("POST /api/box", params.Box.UpsertBox) // Deprecated
 	api.HandleFunc("GET /api/box", params.Box.List)
+	api.HandleFunc("POST /api/box/{service}/{stage}/{template}", params.Box.UpsertBoxV2)
+
 	api.HandleFunc("HEAD /api/box/{service}/{stage}/{template}", params.Box.Exist)
 	api.HandleFunc("GET /api/box/{service}/{stage}/{template}", params.Box.Retrieve)
 	api.HandleFunc("GET /api/box/{service}/{stage}/{template}/build", params.Box.Build)
 	api.HandleFunc("GET /api/box/{service}/{stage}/{template}/vars", params.Box.ListVars)
+	api.HandleFunc("GET /api/box/schemas", params.Box.ListSchemaTypes)
 
 	api.HandleFunc("POST /api/entry", params.Entry.Upsert)
 	api.HandleFunc("GET /api/entry/key", params.Entry.GetByKey)
@@ -120,19 +123,24 @@ func NewHttpApi(params Params) {
 	api.HandleFunc("DELETE /api/entry/key", params.Entry.DeleteKey)
 
 	// TODO: change to /api/entry/resolve for backends parameterstore, parameterstore_secure
-	api.HandleFunc("GET /api/entry/secret-value", params.Entry.Resolve)
+	api.HandleFunc("GET /api/entry/secret-value", params.Entry.Resolve) // Deprecated: use  endpoint /api/entry/resolve
 	api.HandleFunc("GET /api/entry/resolve", params.Entry.Resolve)
 
 	api.HandleFunc("POST /api/entry/lookup", params.Entry.RetrieveMany)
 
 	api.HandleFunc("GET /api/track/key", params.Tracker.Tracking)
 
-	// Deprecated: Use endpoint /api/prefix
-	api.HandleFunc("GET /api/static/environments", params.Static.Environments)
+	// TODO: Deprecated
+	api.HandleFunc("GET /api/static/environments", params.Static.Environments) // Deprecated: Use endpoint /api/prefix
 
 	api.HandleFunc("GET /api/prefix/resolve", params.PrefixConfigHandler.GetByPrefix)
 	api.HandleFunc("GET /api/prefix", params.PrefixConfigHandler.List)
 	api.HandleFunc("GET /api/prefix/backends", params.PrefixConfigHandler.ListBackends)
+
+	// boxspec
+	api.HandleFunc("GET /api/boxspec/specs", params.BoxSpec.List)
+	api.HandleFunc("POST /api/boxspec/reload", params.BoxSpec.Reload)
+	api.HandleFunc("POST /api/boxspec/validate", params.BoxSpec.ValidateTemplate)
 
 	useAuth := middleware.Chain(
 		append(

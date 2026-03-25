@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"nbox/internal/domain"
-
 	"golang.org/x/crypto/bcrypt"
+	"nbox/internal/domain"
 )
 
 type userSchema map[string]struct {

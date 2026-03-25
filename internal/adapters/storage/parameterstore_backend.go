@@ -3,13 +3,6 @@ package storage
 import (
 	"context"
 	"fmt"
-	"nbox/internal/application"
-	"nbox/internal/domain"
-	"nbox/internal/domain/backend"
-	"nbox/internal/domain/models"
-	"nbox/internal/domain/models/operations"
-	"nbox/internal/usecases"
-	"nbox/pkg/resiliency"
 	"strings"
 	"sync"
 	"time"
@@ -18,12 +11,19 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"go.uber.org/zap"
+	"nbox/internal/application"
+	"nbox/internal/domain"
+	"nbox/internal/domain/backend"
+	"nbox/internal/domain/models"
+	"nbox/internal/domain/models/operations"
+	"nbox/internal/usecases"
+	"nbox/pkg/resiliency"
 )
 
 const (
-	// MaxSSMConcurrency limita las peticiones simultáneas a AWS SSM.
-	// El tier estándar soporta ~40 TPS. Con 5 hilos concurrentes nos mantenemos
-	// en un margen seguro para evitar ThrottlingException.
+	// MaxSSMConcurrency limits concurrent requests to AWS SSM.
+	// The standard tier supports ~40 TPS. With 5 concurrent threads we stay
+	// within a safe margin to avoid ThrottlingException.
 	MaxSSMConcurrency = 5
 )
 
@@ -61,7 +61,6 @@ func (p *ParameterStoreBackend) BackendType() backend.StorageBackendType {
 }
 
 func (p *ParameterStoreBackend) Upsert(ctx context.Context, entries []models.Entry) operations.Results {
-
 	ch := make(chan operations.Result, len(entries))
 	var wg sync.WaitGroup
 
@@ -129,7 +128,6 @@ func (p *ParameterStoreBackend) Retrieve(ctx context.Context, key string, opts .
 		Name:           aws.String(key),
 		WithDecryption: aws.Bool(config.Decrypt),
 	})
-
 	if err != nil {
 		if strings.Contains(err.Error(), "ParameterNotFound") {
 			return nil, fmt.Errorf("%w: %s", domain.ErrEntryNotFound, key)
@@ -153,7 +151,6 @@ func (p *ParameterStoreBackend) Delete(ctx context.Context, key string) error {
 		})
 		return err
 	})
-
 	if err != nil {
 		// ParameterNotFound is not an error for Delete (idempotent)
 		if strings.Contains(err.Error(), "ParameterNotFound") {
@@ -267,7 +264,6 @@ func (p *ParameterStoreBackend) addTags(ctx context.Context, key *string, entry 
 			{Key: aws.String("username"), Value: aws.String(updatedBy)},
 		},
 	})
-
 	if err != nil {
 		p.logger.Warn("Failed to add tags to parameter",
 			zap.String("key", *key),

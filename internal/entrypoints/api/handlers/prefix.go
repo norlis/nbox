@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"errors"
-	"nbox/internal/domain"
-	"nbox/internal/domain/backend"
 	"net/http"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
+	"nbox/internal/domain"
+	"nbox/internal/domain/backend"
 )
 
 type PrefixConfigHandler struct {
@@ -66,7 +66,7 @@ func (h *PrefixConfigHandler) GetByPrefix(w http.ResponseWriter, r *http.Request
 // @Security BearerAuth
 // @Success 200 {object} []backend.PrefixConfig "List of prefix config"
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Router /api/prefix [get]
+// @Router /api/prefix [get].
 func (h *PrefixConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -88,7 +88,7 @@ func (h *PrefixConfigHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Success 200 {object} []string "List of backend types (e.g. dynamodb, parameterstore)"
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Router /api/prefix/backends [get]
+// @Router /api/prefix/backends [get].
 func (h *PrefixConfigHandler) ListBackends(w http.ResponseWriter, r *http.Request) {
 	types := backend.GetAllBackendTypes()
 	h.render.JSON(w, r, types)

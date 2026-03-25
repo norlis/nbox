@@ -34,7 +34,6 @@ func NewHttpServerMux(lc fx.Lifecycle, logger *zap.Logger) *http.ServeMux {
 					logger.Error("Error al iniciar servidor HTTP: %v", zap.Error(err))
 				}
 			}()
-			logger.Info("Servidor HTTP escuchando en " + listener)
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {

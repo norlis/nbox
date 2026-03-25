@@ -68,8 +68,7 @@ func (g *Guard) Execute(ctx context.Context, fn func() error) error {
 	}
 	defer g.sem.Release(1)
 
-	_, err := g.cb.Execute(func() (interface{}, error) {
-
+	_, err := g.cb.Execute(func() (any, error) {
 		exp := backoff.NewExponentialBackOff()
 		exp.InitialInterval = g.baseDelay
 		exp.RandomizationFactor = 0.5 // Jitter

@@ -2,6 +2,7 @@ package operations
 
 import (
 	"encoding/json"
+
 	"nbox/internal/domain/models"
 )
 
@@ -64,7 +65,7 @@ func (r Results) Add(key string, action OperationType, err error) {
 	}
 }
 
-// Helper para facilitar la creación de resultados con Output
+// Helper para facilitar la creación de resultados con Output.
 func (r Results) AddWithOutput(key string, action OperationType, err error, output *models.Entry) {
 	r[key] = Result{
 		Key:    key,

@@ -9,7 +9,7 @@
             "url": "http://www.example.com/support",
             "email": "norlis.viamonte@gmail.com"
         },
-        "version": "1.0"
+        "version": "2.0"
     },
     "basePath": "/",
     "paths": {
@@ -177,6 +177,43 @@
                 }
             }
         },
+        "/api/box/schemas": {
+            "get": {
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get the list of supported storage backends",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "List Available Schema Types",
+                "responses": {
+                    "200": {
+                        "description": "List of schema types (e.g. json, txt)",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                }
+            }
+        },
         "/api/box/{service}/{stage}/{template}": {
             "get": {
                 "security": [
@@ -223,6 +260,88 @@
                         "description": "OK",
                         "schema": {
                             "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "insert or update a specific template on s3",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Upsert template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "service name",
+                        "name": "service",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "stage name",
+                        "name": "stage",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "template name",
+                        "name": "template",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Template content (Base64 encoded)",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_entrypoints_api_handlers.BoxInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of updated paths",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     },
                     "401": {
@@ -431,6 +550,135 @@
                     },
                     "500": {
                         "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/boxspec/reload": {
+            "post": {
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Hot-reload specs from filesystem without restart",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "boxspec"
+                ],
+                "summary": "Reload validation specs",
+                "responses": {
+                    "200": {
+                        "description": "count of loaded specs",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "integer"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/boxspec/specs": {
+            "get": {
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get list of schemas available for template validation",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "boxspec"
+                ],
+                "summary": "List available validation specs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/nbox_internal_domain_boxspec.SpecDefinition"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/boxspec/validate": {
+            "post": {
+                "description": "Check if a template complies with defined specs without saving",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Validate template",
+                "parameters": [
+                    {
+                        "description": "Template data",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_entrypoints_api_handlers.ValidateInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nbox_internal_domain_boxspec.ValidationResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Validation Failed",
                         "schema": {
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
@@ -701,6 +949,66 @@
                 }
             }
         },
+        "/api/entry/lookup": {
+            "post": {
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Retrieve values and metadata for a list of keys in a single request.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "entry"
+                ],
+                "summary": "Retrieve multiple entries",
+                "parameters": [
+                    {
+                        "description": "List of keys to retrieve",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/nbox_internal_domain_models.Entry"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                }
+            }
+        },
         "/api/entry/prefix": {
             "get": {
                 "security": [
@@ -753,7 +1061,7 @@
                 }
             }
         },
-        "/api/entry/secret-value": {
+        "/api/entry/resolve": {
             "get": {
                 "security": [
                     {
@@ -770,7 +1078,7 @@
                 "tags": [
                     "entry"
                 ],
-                "summary": "Retrieve secret value",
+                "summary": "Resolve value",
                 "parameters": [
                     {
                         "type": "string",
@@ -808,6 +1116,173 @@
                 }
             }
         },
+        "/api/prefix": {
+            "get": {
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get the list of configurations",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "prefix-config"
+                ],
+                "summary": "List Available configs",
+                "responses": {
+                    "200": {
+                        "description": "List of prefix config",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/nbox_internal_domain_backend.PrefixConfig"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/prefix/backends": {
+            "get": {
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get the list of supported storage backends",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "prefix-config"
+                ],
+                "summary": "List Available Backend Types",
+                "responses": {
+                    "200": {
+                        "description": "List of backend types (e.g. dynamodb, parameterstore)",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/prefix/resolve": {
+            "get": {
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "plain value",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "prefix-config"
+                ],
+                "summary": "Prefix config",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "prefix path",
+                        "name": "v",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nbox_internal_domain_backend.PrefixConfig"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/static/environments": {
+            "get": {
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the list of allowed prefixes. Use /api/static/tree-config instead.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "static"
+                ],
+                "summary": "List allowed prefixes (Deprecated)",
+                "deprecated": true,
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                }
+            }
+        },
         "/api/track/key": {
             "get": {
                 "security": [
@@ -823,7 +1298,7 @@
                     "application/json"
                 ],
                 "tags": [
-                    "entry"
+                    "Tracking"
                 ],
                 "summary": "History",
                 "parameters": [
@@ -833,6 +1308,18 @@
                         "name": "v",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start time. Supports: 30m, 2h, 1.5d, 2w, 1M or ISO-8601",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End time. Supports: 30m, 2h, 1.5d, 2w, 1M or ISO-8601",
+                        "name": "to",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -873,6 +1360,14 @@
                 }
             }
         },
+        "internal_entrypoints_api_handlers.BoxInput": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_entrypoints_api_handlers.CommandBox": {
             "type": "object",
             "properties": {
@@ -882,6 +1377,111 @@
                 },
                 "payload": {
                     "$ref": "#/definitions/nbox_internal_domain_models.Box"
+                }
+            }
+        },
+        "internal_entrypoints_api_handlers.ValidateInput": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "filename": {
+                    "type": "string"
+                }
+            }
+        },
+        "nbox_internal_domain_backend.PrefixConfig": {
+            "type": "object",
+            "properties": {
+                "prefix": {
+                    "description": "PK",
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "typeAllowed": {
+                    "description": "TODO: Deprecated",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/nbox_internal_domain_backend.StorageBackendType"
+                    }
+                },
+                "typeDefault": {
+                    "$ref": "#/definitions/nbox_internal_domain_backend.StorageBackendType"
+                },
+                "typeSecure": {
+                    "$ref": "#/definitions/nbox_internal_domain_backend.StorageBackendType"
+                }
+            }
+        },
+        "nbox_internal_domain_backend.StorageBackendType": {
+            "type": "string",
+            "enum": [
+                "dynamodb",
+                "parameterstore",
+                "parameterstore_secure"
+            ],
+            "x-enum-varnames": [
+                "BackendDynamoDB",
+                "BackendParameterStore",
+                "BackendParameterStoreSecure"
+            ]
+        },
+        "nbox_internal_domain_boxspec.SpecDefinition": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "Unique identifier (e.g., \"aws:ecs:task-def-v1\")",
+                    "type": "string"
+                },
+                "matchPatterns": {
+                    "description": "Glob patterns (e.g., \"taskdef*.json\")",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string"
+                },
+                "version": {
+                    "description": "Schema version",
+                    "type": "string"
+                }
+            }
+        },
+        "nbox_internal_domain_boxspec.ValidationError": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "path": {
+                    "description": "e.g., \"containerDefinitions.0.memory\"",
+                    "type": "string"
+                }
+            }
+        },
+        "nbox_internal_domain_boxspec.ValidationResult": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/nbox_internal_domain_boxspec.ValidationError"
+                    }
+                },
+                "spec": {
+                    "$ref": "#/definitions/nbox_internal_domain_boxspec.SpecDefinition"
+                },
+                "valid": {
+                    "type": "boolean"
                 }
             }
         },
@@ -906,6 +1506,9 @@
                     "type": "string",
                     "example": "development/service/var-example"
                 },
+                "metadata": {
+                    "$ref": "#/definitions/nbox_internal_domain_models.Metadata"
+                },
                 "secure": {
                     "type": "boolean",
                     "example": false
@@ -916,9 +1519,32 @@
                 }
             }
         },
+        "nbox_internal_domain_models.Metadata": {
+            "type": "object",
+            "properties": {
+                "fingerprint": {
+                    "type": "string"
+                },
+                "storageBackend": {
+                    "$ref": "#/definitions/nbox_internal_domain_backend.StorageBackendType"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "updatedBy": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "nbox_internal_domain_models.Stage": {
             "type": "object",
             "properties": {
+                "metadata": {
+                    "$ref": "#/definitions/nbox_internal_domain_models.TemplateMetadata"
+                },
                 "template": {
                     "$ref": "#/definitions/nbox_internal_domain_models.Template"
                 }
@@ -936,14 +1562,11 @@
                 }
             }
         },
-        "nbox_internal_domain_models.Tracking": {
+        "nbox_internal_domain_models.TemplateMetadata": {
             "type": "object",
             "properties": {
-                "key": {
+                "hash": {
                     "type": "string"
-                },
-                "secure": {
-                    "type": "boolean"
                 },
                 "updatedAt": {
                     "type": "string"
@@ -951,8 +1574,41 @@
                 "updatedBy": {
                     "type": "string"
                 },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "nbox_internal_domain_models.Tracking": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "hash": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "secure": {
+                    "type": "boolean"
+                },
+                "storageBackend": {
+                    "$ref": "#/definitions/nbox_internal_domain_backend.StorageBackendType"
+                },
+                "updatedAt": {
+                    "description": ",unixtime",
+                    "type": "string"
+                },
+                "updatedBy": {
+                    "type": "string"
+                },
                 "value": {
                     "type": "string"
+                },
+                "version": {
+                    "type": "integer"
                 }
             }
         },

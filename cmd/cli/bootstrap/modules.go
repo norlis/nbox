@@ -1,12 +1,11 @@
 package bootstrap
 
 import (
+	"go.uber.org/fx"
 	"nbox/internal/adapters/amazonaws"
 	"nbox/internal/adapters/storage"
 	"nbox/internal/usecases"
 	"nbox/pkg/logger"
-
-	"go.uber.org/fx"
 )
 
 var CommonModules = fx.Options(

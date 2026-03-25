@@ -1,106 +1,63 @@
 package application
 
 import (
-	"os"
-	"strconv"
-	"strings"
+	"fmt"
+
+	"nbox/pkg/env"
 )
 
-type CredentialsSource string
-
-const (
-	// SourceEnvVar carga credenciales desde variable de entorno (desarrollo).
-	SourceEnvVar CredentialsSource = "env"
-	// SourceSecretsManager carga credenciales desde AWS Secrets Manager (producción).
-	SourceSecretsManager CredentialsSource = "secretsmanager"
-	// SourceFile carga credenciales desde archivo local (desarrollo/testing).
-	SourceFile CredentialsSource = "file"
-)
-
+// CredentialsLoaderConfig defines how authentication credentials are loaded.
+// Supports multiple sources: environment variables, AWS Secrets Manager, or file.
 type CredentialsLoaderConfig struct {
-	Source    CredentialsSource
-	EnvVarKey string // Nombre de la variable de entorno
-	SecretARN string // ARN del secreto en AWS Secrets Manager
-	FilePath  string // Ruta al archivo de credenciales
+	Source    string `env:"NBOX_CREDENTIALS_SOURCE"         envDefault:"env"`                         // Deprecated: Source type: "env", "secretsmanager", or "file"
+	EnvVarKey string `env:"NBOX_BASIC_AUTH_CREDENTIALS_KEY" envDefault:"NBOX_BASIC_AUTH_CREDENTIALS"` // Environment variable name containing credentials
+	SecretARN string `env:"NBOX_CREDENTIALS_SECRET_ARN"`                                              // Deprecated: AWS Secrets Manager secret ARN
+	FilePath  string `env:"NBOX_CREDENTIALS_FILE"           envDefault:".credentials.json"`           // Deprecated: Path to credentials file
 }
 
+// Config holds the application configuration loaded from environment variables.
 type Config struct {
-	BucketName             string   `pkl:"bucketName"`
-	EntryTableName         string   `pkl:"entryTableName"`
-	TrackingEntryTableName string   `pkl:"trackingEntryTableName"`
-	BoxTableName           string   `pkl:"boxTableName"`
-	PrefixConfigTableName  string   `pkl:"prefixConfigTableName"`
-	RegionName             string   `pkl:"regionName"`
-	AccountId              string   `pkl:"accountId"`
-	ParameterStoreKeyId    string   `pkl:"parameterStoreKeyId"`
-	ParameterShortArn      bool     `pkl:"parameterShortArn"`
-	DefaultPrefix          string   `pkl:"defaultPrefix"`
-	AllowedPrefixes        []string `pkl:"allowedPrefixes"`
-	HmacSecretKey          []byte
-	CredentialsLoader      CredentialsLoaderConfig
+	// --- Core AWS ---
+	RegionName string `env:"AWS_REGION" envDefault:"us-east-1" pkl:"regionName"` // AWS region for all services
+	AccountId  string `env:"ACCOUNT_ID" pkl:"accountId"`                         // AWS account ID (used for ARN construction)
+
+	// --- Storage (DynamoDB & S3) ---
+	BucketName             string `env:"NBOX_BUCKET_NAME"                 envDefault:"nbox-store"                pkl:"bucketName"`             // S3 bucket for templates
+	EntryTableName         string `env:"NBOX_ENTRIES_TABLE_NAME"          envDefault:"nbox-entry-table"          pkl:"entryTableName"`         // DynamoDB table for entries
+	TrackingEntryTableName string `env:"NBOX_TRACKING_ENTRIES_TABLE_NAME" envDefault:"nbox-tracking-entry-table" pkl:"trackingEntryTableName"` // DynamoDB table for change history
+	BoxTableName           string `env:"NBOX_BOX_TABLE_NAME"              envDefault:"nbox-box-table"            pkl:"boxTableName"`           // DynamoDB table for box/templates metadata
+	PrefixConfigTableName  string `env:"NBOX_PREFIX_CONFIG_TABLE_NAME"    envDefault:"nbox-prefix-config-table"  pkl:"prefixConfigTableName"`  // DynamoDB table for prefix configurations
+
+	// --- Parameter Store ---
+	ParameterStoreKeyId string `env:"NBOX_PARAMETER_STORE_KEY_ID"    pkl:"parameterStoreKeyId"`                         // KMS key ID for SecureString encryption
+	ParameterShortArn   bool   `env:"NBOX_PARAMETER_STORE_SHORT_ARN" envDefault:"true"         pkl:"parameterShortArn"` // Use short ARN format (e.g., /path/key instead of full ARN)
+
+	// --- Security ---
+	HmacSecretKey     []byte                  `env:"HMAC_SECRET_KEY" required:"true"` // Secret key for HMAC token signing (openssl rand -base64 32 | openssl rand -hex 32)
+	CredentialsLoader CredentialsLoaderConfig // Nested config for credentials loading
+
+	// --- app ---
+	DefaultPrefix string `env:"NBOX_DEFAULT_PREFIX" envDefault:"global" pkl:"defaultPrefix"` // default prefix for entries
+
+	// --- Legacy (deprecated) ---
+	AllowedPrefixes []string `env:"NBOX_ALLOWED_PREFIXES" envDefault:"development/,qa/,beta/,production/" envSeparator:"," pkl:"allowedPrefixes"` // Deprecated: list of allowed prefixes
+
+	SpecsPath string `env:"NBOX_SPECS_PATH" envDefault:"/etc/nbox/specs"`
 }
 
-// #nosec G101
-const EnvCredentials = "NBOX_BASIC_AUTH_CREDENTIALS"
+// NewConfigFromEnv loads configuration by reading environment variables.
+// It uses the env package to parse tags, apply defaults, and convert types.
+func NewConfigFromEnv() (*Config, error) {
+	cfg := &Config{}
 
-func NewConfigFromEnv() *Config {
-	var prefixes []string
-
-	defaultPrefix := env("NBOX_DEFAULT_PREFIX", "global")
-
-	prefixes = append(prefixes, defaultPrefix+"/")
-
-	prefixes = append(
-		prefixes,
-		strings.Split(env("NBOX_ALLOWED_PREFIXES", "development/,qa/,beta/,staging/,sandbox/,production/"), ",")...,
-	)
-
-	// Configurar estrategia de carga de credenciales
-	credSource := CredentialsSource(env("NBOX_CREDENTIALS_SOURCE", "env"))
-	credConfig := CredentialsLoaderConfig{
-		Source:    credSource,
-		EnvVarKey: EnvCredentials,
-		SecretARN: env("NBOX_CREDENTIALS_SECRET_ARN", ""),
-		FilePath:  env("NBOX_CREDENTIALS_FILE", ".credentials.json"),
+	//  Auto load: Read struct tags, lookup ENV vars, apply defaults, convert types
+	if err := env.Parse(cfg); err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	return &Config{
-		BucketName:             env("NBOX_BUCKET_NAME", "nbox-store"),
-		EntryTableName:         env("NBOX_ENTRIES_TABLE_NAME", "nbox-entry-table"),
-		TrackingEntryTableName: env("NBOX_TRACKING_ENTRIES_TABLE_NAME", "nbox-tracking-entry-table"),
-		BoxTableName:           env("NBOX_BOX_TABLE_NAME", "nbox-box-table"),
-		PrefixConfigTableName:  env("NBOX_PREFIX_CONFIG_TABLE_NAME", "nbox-prefix-config-table"),
-		AccountId:              env("ACCOUNT_ID", ""),
-		RegionName:             env("AWS_REGION", "us-east-1"),
-		ParameterStoreKeyId:    env("NBOX_PARAMETER_STORE_KEY_ID", ""), // KMS KEY ID
-		ParameterShortArn:      envBool("NBOX_PARAMETER_STORE_SHORT_ARN"),
-		DefaultPrefix:          defaultPrefix,
-		AllowedPrefixes:        prefixes,
-		HmacSecretKey:          []byte(env("HMAC_SECRET_KEY", "")),
-		CredentialsLoader:      credConfig,
-	}
-}
+	// Post-load enrichment: Append defaultPrefix to allowed prefixes list
+	// Note: AllowedPrefixes is already populated from env/default values
+	cfg.AllowedPrefixes = append(cfg.AllowedPrefixes, cfg.DefaultPrefix+"/")
 
-func env(key, defaultValue string) string {
-	value, exists := os.LookupEnv(key)
-	if !exists {
-		return defaultValue
-	}
-
-	// Trim whitespace to prevent configuration errors
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return defaultValue
-	}
-
-	return value
-}
-
-func envBool(key string) bool {
-	s := env(key, "false")
-	v, err := strconv.ParseBool(s)
-	if err != nil {
-		return false
-	}
-	return v
+	return cfg, nil
 }

@@ -10,12 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"nbox/internal/application"
-	"nbox/internal/domain"
-	"nbox/internal/domain/models"
-	"nbox/internal/domain/models/operations"
-	"nbox/internal/usecases"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
@@ -23,6 +17,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/cenkalti/backoff/v4"
 	"go.uber.org/zap"
+	"nbox/internal/application"
+	"nbox/internal/domain"
+	"nbox/internal/domain/models"
+	"nbox/internal/domain/models/operations"
+	"nbox/internal/usecases"
 )
 
 const (
@@ -79,6 +78,7 @@ func (c *PermitPool) CurrentPermits() int {
 }
 
 // dynamodbBackend aws docs https://aws.github.io/aws-sdk-go-v2/docs/
+// Deprecated.
 type dynamodbBackend struct {
 	client      *dynamodb.Client
 	config      *application.Config
@@ -87,6 +87,7 @@ type dynamodbBackend struct {
 	logger      *zap.Logger
 }
 
+// NewDynamodbBackend TODO eliminar.
 func NewDynamodbBackend(client *dynamodb.Client, config *application.Config, pathUseCase *usecases.PathUseCase, logger *zap.Logger) domain.EntryAdapter {
 	return &dynamodbBackend{
 		client:      client,

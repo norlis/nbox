@@ -4,25 +4,27 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"nbox/internal/adapters/storage"
 	"os"
-
-	"nbox/internal/adapters/amazonaws"
-	"nbox/internal/adapters/persistence"
-	"nbox/internal/adapters/sse"
-	"nbox/internal/application"
-	"nbox/internal/domain"
-	"nbox/internal/entrypoints/api/auth"
-	"nbox/internal/entrypoints/api/handlers"
-	"nbox/internal/entrypoints/httpapi"
-	"nbox/internal/usecases"
-	"nbox/pkg/logger"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	status "github.com/norlis/httpgate/pkg/application/health"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"nbox/internal/adapters/amazonaws"
+	"nbox/internal/adapters/persistence"
+	"nbox/internal/adapters/spec"
+	"nbox/internal/adapters/sse"
+	"nbox/internal/adapters/storage"
+	"nbox/internal/application"
+	"nbox/internal/domain"
+	"nbox/internal/domain/strategies"
+	"nbox/internal/entrypoints/api/auth"
+	"nbox/internal/entrypoints/api/handlers"
+	"nbox/internal/entrypoints/httpapi"
+	"nbox/internal/usecases"
+	"nbox/pkg/logger"
 )
 
 // banner
@@ -57,8 +59,11 @@ func main() {
 
 	app := fx.New(
 		fx.Provide(logger.NewLogger),
+		// fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
+		//	return &fxevent.ZapLogger{Logger: log}
+		// }),
 		fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
-			return &fxevent.ZapLogger{Logger: log}
+			return &fxevent.ZapLogger{Logger: log.WithOptions(zap.IncreaseLevel(zapcore.WarnLevel))}
 		}),
 		fx.Provide(amazonaws.NewAwsConfig),
 		fx.Provide(amazonaws.NewS3Client),
@@ -82,6 +87,9 @@ func main() {
 		fx.Provide(storage.NewParameterStoreBackend),       // Backend SSM Standard
 		fx.Provide(storage.NewParameterStoreSecureBackend), // Backend SSM Secure
 
+		// boxspec
+		spec.Module,
+
 		// gateway manager storages
 		fx.Provide(func(
 			l *zap.Logger,
@@ -98,7 +106,6 @@ func main() {
 		}),
 		fx.Decorate(usecases.NewEntryManagerWithTracking),
 
-
 		// Handlers
 		fx.Provide(handlers.NewEntryHandler),
 		fx.Provide(handlers.NewBoxHandler),
@@ -107,15 +114,16 @@ func main() {
 		fx.Provide(handlers.NewExportHandler),
 		fx.Provide(handlers.NewPrefixConfigHandler),
 		fx.Provide(handlers.NewTrackHandler),
-
+		fx.Provide(handlers.NewBoxSpecHandler),
 
 		// Use case
+		fx.Provide(strategies.NewStrategyResolver),
 		fx.Provide(usecases.NewPathUseCase),
-		//fx.Provide(usecases.NewEntryUseCase),
+		// fx.Provide(usecases.NewEntryUseCase),
 		fx.Provide(usecases.NewBox),
 		fx.Provide(usecases.NewExportUseCase),
 
-		//fx.Decorate(usecases.NewEntryUseCaseWithEvents),
+		// fx.Decorate(usecases.NewEntryUseCaseWithEvents),
 		fx.Provide(usecases.NewEventUseCase),
 
 		// sse
@@ -133,8 +141,8 @@ func main() {
 		}),
 		fx.Provide(presenters.NewPresenters),
 		fx.Provide(httpapi.NewHttpServerMux),
-		fx.Provide(func() domain.UserRepository {
-			credentials := os.Getenv(application.EnvCredentials)
+		fx.Provide(func(config *application.Config) domain.UserRepository {
+			credentials := os.Getenv(config.CredentialsLoader.EnvVarKey)
 			repo, err := persistence.NewInMemoryUserRepository([]byte(credentials))
 			if err != nil {
 				log.Fatal(err)
@@ -142,7 +150,7 @@ func main() {
 			return repo
 		}),
 		fx.Provide(func(config *application.Config, render presenters.Presenters, logger *zap.Logger, repo domain.UserRepository) *auth.Authn {
-			return auth.NewAuthn(application.EnvCredentials, config, render, logger, repo)
+			return auth.NewAuthn(config.CredentialsLoader.EnvVarKey, config, render, logger, repo)
 		}),
 		fx.Invoke(httpapi.NewHttpApi),
 	)

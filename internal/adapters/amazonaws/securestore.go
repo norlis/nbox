@@ -7,27 +7,29 @@ import (
 	"strings"
 	"sync"
 
-	"nbox/internal/application"
-	"nbox/internal/domain"
-	"nbox/internal/domain/models"
-	"nbox/internal/domain/models/operations"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"go.uber.org/zap"
+	"nbox/internal/application"
+	"nbox/internal/domain"
+	"nbox/internal/domain/models"
+	"nbox/internal/domain/models/operations"
 )
 
 var ErrParameterNotFound = errors.New("parameter not found or has no value")
 
 type Result models.Exchange[*ssm.PutParameterOutput, *models.Entry]
 
+// Deprecated.
 type secureParameterStore struct {
 	client *ssm.Client
 	config *application.Config
 	logger *zap.Logger
 }
 
+// NewSecureParameterStore
+// Deprecated.
 func NewSecureParameterStore(client *ssm.Client, config *application.Config, logger *zap.Logger) domain.SecretAdapter {
 	return &secureParameterStore{client: client, config: config, logger: logger.Named("secure_parameter_store")}
 }

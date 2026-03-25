@@ -2,69 +2,92 @@ package usecases
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"nbox/internal/domain"
-	"nbox/internal/domain/models"
+	"nbox/internal/domain/strategies"
 )
+
+type buildConfig struct {
+	Strict bool
+}
+
+type BuildOption func(*buildConfig)
+
+func WithBuildTemplateStrict() BuildOption {
+	return func(c *buildConfig) {
+		c.Strict = true
+	}
+}
 
 type BoxUseCase struct {
 	templateAdapter domain.TemplateAdapter
 	entryAdapter    domain.EntryManager
 	pathUseCase     *PathUseCase
+	resolver        *strategies.StrategyResolver
 }
 
-func NewBox(boxOperation domain.TemplateAdapter, entryOperations domain.EntryManager, pathUseCase *PathUseCase) *BoxUseCase {
+func NewBox(
+	boxOperation domain.TemplateAdapter,
+	entryOperations domain.EntryManager,
+	pathUseCase *PathUseCase,
+	resolver *strategies.StrategyResolver,
+) *BoxUseCase {
 	return &BoxUseCase{
 		templateAdapter: boxOperation,
 		entryAdapter:    entryOperations,
 		pathUseCase:     pathUseCase,
+		resolver:        resolver,
 	}
 }
 
-func (b *BoxUseCase) BuildBox(ctx context.Context, service, stage, template string, args map[string]string) (string, error) {
-	var schemaEnum models.SchemaType
+func (b *BoxUseCase) BuildBox(ctx context.Context, service, stage, template string, args map[string]string, opts ...BuildOption) (string, error) {
+	cfg := &buildConfig{
+		Strict: false,
+	}
+	for _, opt := range opts {
+		opt(cfg)
+	}
 
-	schema, _ := schemaEnum.GetSchemaFromFilename(template)
+	strategy := b.resolver.Resolve(template)
 
 	box, err := b.templateAdapter.RetrieveBox(ctx, service, stage, template)
 	if err != nil {
-		return "", fmt.Errorf("failed to retrieve box: %w", err)
+		return "", errors.Join(domain.ErrTemplateNotFound, fmt.Errorf("failed to retrieve template %s/%s/%s: %w", service, stage, template, err))
 	}
 
 	tmpl := b.VarsBuilder(string(box), service, stage, template, args)
 	proc := NewProcessor(tmpl)
-	prefixes := proc.GetPrefixes()
-
+	keys := proc.GetKeys()
 	tree := map[string]string{}
 
-	for _, k := range prefixes {
-		entries, _ := b.entryAdapter.List(ctx, k)
-		for _, entry := range entries {
-			if k == strings.TrimSpace(entry.Path) {
-				p := b.pathUseCase.Concat(k, entry.Key)
-				tree[p] = b.transformBySchema(schema, entry.Value)
-			}
+	results, err := b.entryAdapter.RetrieveMany(ctx, keys)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve variables values: %w", err)
+	}
+	for _, entry := range results {
+		tree[entry.Key] = strategy.Transform(entry.Value)
+		// tree[entry.Key] = b.transformBySchema(schema, entry.Value)
+	}
+
+	if cfg.Strict {
+		missing := proc.GetMissingVars(tree)
+		if len(missing) > 0 {
+			return "", fmt.Errorf("%w: %v", domain.ErrMissingVariables, missing)
 		}
 	}
 
-	return proc.Replace(tree), nil
-}
+	content := proc.Replace(tree)
 
-func (b *BoxUseCase) transformBySchema(schemeType models.SchemaType, value string) string {
-	switch schemeType {
-	case models.JSON:
-		// return strings.ReplaceAll(value, `"`, `\"`)
-		escaped, err := json.Marshal(value)
-		if err != nil {
-			return ""
+	if cfg.Strict {
+		if err = strategy.Validate(content); err != nil {
+			return "", fmt.Errorf("%w: invalid %s syntax: %w", domain.ErrInvalidSyntax, strategy.SchemaType(), err)
 		}
-		return strings.Trim(string(escaped), `"`)
-	default:
-		return value
 	}
+
+	return content, nil
 }
 
 func (b *BoxUseCase) VarsBuilder(tmpl, service, stage, template string, args map[string]string) string {

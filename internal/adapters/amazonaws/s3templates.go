@@ -3,11 +3,12 @@ package amazonaws
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"path"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -17,7 +18,10 @@ import (
 	"go.uber.org/zap"
 	"nbox/internal/application"
 	"nbox/internal/domain"
+	"nbox/internal/domain/boxspec"
 	"nbox/internal/domain/models"
+	"nbox/internal/domain/strategies"
+	"nbox/internal/domain/validation"
 )
 
 type s3TemplateStore struct {
@@ -25,45 +29,76 @@ type s3TemplateStore struct {
 	dynamodbClient *dynamodb.Client
 	config         *application.Config
 	logger         *zap.Logger
+	resolver       *strategies.StrategyResolver
+	registry       *boxspec.SpecRegistry
 }
 
 type BoxRecord struct {
-	Service  string          `dynamodbav:"Service"`
-	Stage    string          `dynamodbav:"Stage"`
-	Template models.Template `dynamodbav:"Template"`
+	Service  string                  `dynamodbav:"Service"`
+	Stage    string                  `dynamodbav:"Stage"`
+	Template models.Template         `dynamodbav:"Template"`
+	Metadata models.TemplateMetadata `dynamodbav:"Metadata"`
 }
 
-func NewS3TemplateStore(s3Client *s3.Client, config *application.Config, dynamodbClient *dynamodb.Client, logger *zap.Logger) domain.TemplateAdapter {
+func NewS3TemplateStore(
+	s3Client *s3.Client,
+	config *application.Config,
+	dynamodbClient *dynamodb.Client,
+	logger *zap.Logger,
+	resolver *strategies.StrategyResolver,
+	registry *boxspec.SpecRegistry,
+) domain.TemplateAdapter {
 	return &s3TemplateStore{
 		s3:             s3Client,
 		dynamodbClient: dynamodbClient,
 		config:         config,
 		logger:         logger,
+		resolver:       resolver,
+		registry:       registry,
 	}
 }
 
-func (b *s3TemplateStore) store(ctx context.Context, objectPath string, stage models.Stage) (*s3.PutObjectOutput, error) {
-	var out bytes.Buffer
-
-	decoded, err := base64.StdEncoding.DecodeString(stage.Template.Value)
+func (b *s3TemplateStore) store(ctx context.Context, objectPath string, stage models.Stage) (*s3.PutObjectOutput, string, validation.Result, error) {
+	content, hash, err := b.resolver.Process(stage.Template.Name, stage.Template.Value)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64 content: %w", err)
+		b.logger.Error("TemplateProcessingFailed", zap.String("path", objectPath), zap.Error(err))
+		return nil, "", validation.NewResult(validation.WithSyntaxError(err)), fmt.Errorf("TemplateProcessingFailed: %w", err)
 	}
 
-	err = json.Indent(&out, decoded, "", "  ")
+	format := strings.TrimPrefix(filepath.Ext(objectPath), ".")
+
+	// Validamos contra el registro. Si no hay spec que coincida, ValidateByFilename retorna Valid=true (ignora)
+	result, err := b.registry.ValidateByFilename(ctx, stage.Template.Name, content, format)
 	if err != nil {
-		return nil, fmt.Errorf("failed to format JSON: %w", err)
+		// Error técnico al intentar validar (ej. problema con el motor CUE)
+		b.logger.Error("SpecValidationEngineError", zap.String("path", objectPath), zap.Error(err))
+		return nil, "", validation.NewResult(validation.WithInternalError(err)), fmt.Errorf("validation engine failed: %w", err)
 	}
 
-	result, err := b.s3.PutObject(ctx, &s3.PutObjectInput{
+	if !result.Valid {
+		// La validación de negocio falló (ej. falta campo 'family' en ECS)
+		b.logger.Warn("TemplateValidationFailed",
+			zap.String("path", objectPath),
+			zap.Any("errors", result.Errors),
+		)
+
+		// Construimos un mensaje de error legible
+		var msgs []string
+		for _, ve := range result.Errors {
+			msgs = append(msgs, fmt.Sprintf("[%s]: %s", ve.Path, ve.Message))
+		}
+		return nil, "", result, fmt.Errorf("template validation failed:\n%s", strings.Join(msgs, "\n"))
+	}
+
+	s3Result, err := b.s3.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(b.config.BucketName),
 		Key:    aws.String(objectPath),
-		Body:   bytes.NewReader(out.Bytes()),
+		Body:   bytes.NewReader(content),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to put object to S3: %w", err)
+		return nil, hash, result, fmt.Errorf("failed to put object to S3: %w", err)
 	}
-	return result, nil
+	return s3Result, hash, result, nil
 }
 
 func (b *s3TemplateStore) BoxExists(ctx context.Context, service, stage, template string) (bool, error) {
@@ -103,8 +138,10 @@ func (b *s3TemplateStore) RetrieveBox(ctx context.Context, service, stage, templ
 	return body, nil
 }
 
-func (b *s3TemplateStore) UpsertBox(ctx context.Context, box *models.Box) []string {
-	result := make([]string, 0)
+func (b *s3TemplateStore) UpsertBox(ctx context.Context, box *models.Box) map[string]validation.Result {
+	// result := make([]string, 0)
+	result := make(map[string]validation.Result)
+
 	var item map[string]types.AttributeValue
 
 	for stageName, stage := range box.Stage {
@@ -114,9 +151,28 @@ func (b *s3TemplateStore) UpsertBox(ctx context.Context, box *models.Box) []stri
 
 		stage.Template.Name = s3path
 		box.Stage[stageName] = stage
-		_, err := b.store(ctx, s3path, stage)
+
+		s3Result, hash, validResult, err := b.store(ctx, s3path, stage)
+		result[s3path] = validResult
 		if err != nil {
 			b.logger.Error("ErrStoreTemplate", zap.String("path", s3path), zap.Error(err))
+			continue
+		}
+
+		if !validResult.Valid {
+			continue
+		}
+
+		versionId := ""
+		if s3Result != nil && s3Result.VersionId != nil {
+			versionId = *s3Result.VersionId
+		}
+
+		UpdatedBy := "ghost"
+		user, ok := application.UserFromContext(ctx)
+
+		if ok {
+			UpdatedBy = user.Name
 		}
 
 		if err == nil {
@@ -127,8 +183,14 @@ func (b *s3TemplateStore) UpsertBox(ctx context.Context, box *models.Box) []stri
 					Name:  s3path,
 					Value: name,
 				},
+				Metadata: models.TemplateMetadata{
+					Version:   versionId,
+					UpdatedAt: time.Now().UTC(),
+					UpdatedBy: UpdatedBy,
+					Hash:      hash,
+				},
 			})
-			_, err = b.dynamodbClient.PutItem(context.TODO(), &dynamodb.PutItemInput{
+			_, err = b.dynamodbClient.PutItem(ctx, &dynamodb.PutItemInput{
 				TableName: aws.String(b.config.BoxTableName), Item: item,
 			})
 			if err != nil {
@@ -136,9 +198,10 @@ func (b *s3TemplateStore) UpsertBox(ctx context.Context, box *models.Box) []stri
 			}
 		}
 
-		if err == nil {
-			result = append(result, s3path)
-		}
+		// if err == nil {
+		//	//result[s3path] = append(result, s3path)
+		//	result = append(result, s3path)
+		//}
 	}
 	return result
 }

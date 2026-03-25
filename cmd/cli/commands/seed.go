@@ -12,7 +12,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.uber.org/fx"
-
 	"nbox/cmd/cli/bootstrap"
 	"nbox/internal/domain"
 	"nbox/internal/domain/backend"
@@ -63,7 +62,7 @@ func runSeed(reader io.Reader, sourceDescription string) func(domain.PrefixConfi
 	}
 }
 
-// parseConfigs parses JSON that can be either an array [...] or a single object {...}
+// parseConfigs parses JSON that can be either an array [...] or a single object {...}.
 func parseConfigs(content []byte) ([]backend.PrefixConfig, error) {
 	trimmed := bytes.TrimSpace(content)
 
@@ -84,7 +83,7 @@ func parseConfigs(content []byte) ([]backend.PrefixConfig, error) {
 	return []backend.PrefixConfig{single}, nil
 }
 
-// prepareConfigs sets timestamps and audit fields
+// prepareConfigs sets timestamps and audit fields.
 func prepareConfigs(configs []backend.PrefixConfig) {
 	now := time.Now().UTC()
 	for i := range configs {
@@ -98,7 +97,7 @@ func prepareConfigs(configs []backend.PrefixConfig) {
 	}
 }
 
-// getInputReader decides where to read from: STDIN, file, or inline string
+// getInputReader decides where to read from: STDIN, file, or inline string.
 func getInputReader(input string) (io.Reader, string, error) {
 	// Check for STDIN pipe
 	if input == "-" {
@@ -124,12 +123,12 @@ func getInputReader(input string) (io.Reader, string, error) {
 	return nil, "", fmt.Errorf("input '%s' is not a valid file and does not look like JSON", input)
 }
 
-// printError prints formatted error messages
+// printError prints formatted error messages.
 func printError(msg string, err error) {
 	fmt.Printf("❌ Error: %s: %v\n", msg, err)
 }
 
-// printSummary displays the operation summary
+// printSummary displays the operation summary.
 func printSummary(stats backend.UpsertStats, total int, err error) {
 	if err != nil {
 		fmt.Printf("\n⚠️  Warning: Batch operation reported errors: %v\n", err)
@@ -150,7 +149,7 @@ func printSummary(stats backend.UpsertStats, total int, err error) {
 	}
 }
 
-// seedCmd defines the Cobra command for seeding
+// seedCmd defines the Cobra command for seeding.
 var seedCmd = &cobra.Command{
 	Use:   "seed [file|json|-]",
 	Short: "Seed prefix configurations",

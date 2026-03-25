@@ -3,10 +3,11 @@ package domain
 import (
 	"context"
 	"encoding/json"
-	"nbox/internal/domain/backend"
 
+	"nbox/internal/domain/backend"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
+	"nbox/internal/domain/validation"
 )
 
 type EntryUseCase interface {
@@ -15,7 +16,7 @@ type EntryUseCase interface {
 
 // TemplateAdapter store templates.
 type TemplateAdapter interface {
-	UpsertBox(ctx context.Context, box *models.Box) []string
+	UpsertBox(ctx context.Context, box *models.Box) map[string]validation.Result
 	BoxExists(ctx context.Context, service, stage, template string) (bool, error)
 	RetrieveBox(ctx context.Context, service, stage, template string) ([]byte, error)
 	List(ctx context.Context) ([]models.Box, error)
@@ -30,7 +31,7 @@ type EntryAdapter interface {
 	Tracking(ctx context.Context, key string) ([]models.Tracking, error)
 }
 
-//type
+// type
 
 // SecretAdapter vars encrypt.
 type SecretAdapter interface {

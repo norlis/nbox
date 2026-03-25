@@ -1,6 +1,9 @@
 package backend
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 type StorageBackendType string
 
@@ -18,7 +21,7 @@ func GetAllBackendTypes() []StorageBackendType {
 	}
 }
 
-// UpsertStats representa las estadísticas de una operación Upsert
+// UpsertStats representa las estadísticas de una operación Upsert.
 type UpsertStats struct {
 	Processed int
 	Failed    int
@@ -26,14 +29,14 @@ type UpsertStats struct {
 }
 
 type PrefixConfig struct {
-	Prefix      string               `json:"prefix" dynamodbav:"Prefix"` // PK
-	TypeDefault StorageBackendType   `json:"typeDefault" dynamodbav:"TypeDefault"`
-	TypeSecure  StorageBackendType   `json:"typeSecure" dynamodbav:"TypeSecure"`
-	TypeAllowed []StorageBackendType `json:"typeAllowed" dynamodbav:"TypeAllowed"` // TODO: Deprecated
-	Tags        map[string]string    `json:"tags,omitempty" dynamodbav:"Tags,omitempty"`
-	CreatedAt   time.Time            `json:"-" dynamodbav:"CreatedAt,unixtime"`
-	UpdatedAt   time.Time            `json:"-" dynamodbav:"UpdatedAt,unixtime"`
-	UpdatedBy   string               `json:"-" dynamodbav:"UpdatedBy"`
+	Prefix      string               `dynamodbav:"Prefix"             json:"prefix"` // PK
+	TypeDefault StorageBackendType   `dynamodbav:"TypeDefault"        json:"typeDefault"`
+	TypeSecure  StorageBackendType   `dynamodbav:"TypeSecure"         json:"typeSecure"`
+	TypeAllowed []StorageBackendType `dynamodbav:"TypeAllowed"        json:"typeAllowed"` // TODO: Deprecated
+	Tags        map[string]string    `dynamodbav:"Tags,omitempty"     json:"tags,omitempty"`
+	CreatedAt   time.Time            `dynamodbav:"CreatedAt,unixtime" json:"-"`
+	UpdatedAt   time.Time            `dynamodbav:"UpdatedAt,unixtime" json:"-"`
+	UpdatedBy   string               `dynamodbav:"UpdatedBy"          json:"-"`
 }
 
 // IsBackendAllowed verifica si un backend está permitido para este prefijo.
@@ -42,11 +45,5 @@ func (c *PrefixConfig) IsBackendAllowed(backend StorageBackendType) bool {
 		return true
 	}
 
-	for _, allowed := range c.TypeAllowed {
-		if backend == allowed {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(c.TypeAllowed, backend)
 }

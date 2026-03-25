@@ -4,23 +4,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"nbox/internal/domain"
-	"nbox/internal/domain/models"
 	"net/http"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	_ "github.com/norlis/httpgate/pkg/kit/problem"
+	"nbox/internal/domain"
+	"nbox/internal/domain/models"
 )
 
 type EntryHandler struct {
-	//entryAdapter  domain.EntryAdapter
-	//entryUseCase  domain.EntryUseCase
-	//secretAdapter domain.SecretAdapter
+	// entryAdapter  domain.EntryAdapter
+	// entryUseCase  domain.EntryUseCase
+	// secretAdapter domain.SecretAdapter
 	store  domain.EntryManager
 	render presenters.Presenters
 }
 
-//func NewEntryHandler(entryAdapter domain.EntryAdapter, secretAdapter domain.SecretAdapter, entryUseCase domain.EntryUseCase, render presenters.Presenters) *EntryHandler {
+// func NewEntryHandler(entryAdapter domain.EntryAdapter, secretAdapter domain.SecretAdapter, entryUseCase domain.EntryUseCase, render presenters.Presenters) *EntryHandler {
 //	return &EntryHandler{entryAdapter: entryAdapter, secretAdapter: secretAdapter, entryUseCase: entryUseCase, render: render}
 //}
 
@@ -166,7 +166,7 @@ func (h *EntryHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 // RetrieveMany
 // @Summary Retrieve multiple entries
 // @Description Retrieve values and metadata for a list of keys in a single request.
-// @Tags Entries
+// @Tags entry
 // @Accept json
 // @Produce json
 // @Param request body []string true "List of keys to retrieve"
@@ -175,7 +175,7 @@ func (h *EntryHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]models.Entry
 // @Failure 400 {object} problem.ProblemDetail "Invalid request body"
 // @Failure 500 {object} problem.ProblemDetail "Internal server error"
-// @Router /api/entries/retrieve-many [post]
+// @Router /api/entry/lookup [post].
 func (h *EntryHandler) RetrieveMany(w http.ResponseWriter, r *http.Request) {
 	keys := make([]string, 0)
 

@@ -2,19 +2,26 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	_ "github.com/norlis/httpgate/pkg/kit/problem"
 	"nbox/internal/domain"
 	"nbox/internal/domain/models"
+	"nbox/internal/domain/strategies"
 	"nbox/internal/usecases"
 )
+
+type BoxInput struct {
+	Content string `json:"content"`
+}
 
 type BoxHandler struct {
 	store      domain.TemplateAdapter
 	boxUseCase *usecases.BoxUseCase
 	render     presenters.Presenters
+	resolver   *strategies.StrategyResolver
 }
 
 type CommandBox struct {
@@ -22,8 +29,13 @@ type CommandBox struct {
 	Payload models.Box `json:"payload"`
 }
 
-func NewBoxHandler(store domain.TemplateAdapter, boxUseCase *usecases.BoxUseCase, render presenters.Presenters) *BoxHandler {
-	return &BoxHandler{store: store, boxUseCase: boxUseCase, render: render}
+func NewBoxHandler(
+	store domain.TemplateAdapter,
+	boxUseCase *usecases.BoxUseCase,
+	render presenters.Presenters,
+	resolver *strategies.StrategyResolver,
+) *BoxHandler {
+	return &BoxHandler{store: store, boxUseCase: boxUseCase, render: render, resolver: resolver}
 }
 
 // UpsertBox
@@ -50,6 +62,53 @@ func (b *BoxHandler) UpsertBox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := b.store.UpsertBox(ctx, &command.Payload)
+	b.render.JSON(w, r, result)
+}
+
+// UpsertBoxV2
+// @Summary Upsert template
+// @Description insert or update a specific template on s3
+// @Tags templates
+// @Accept json
+// @Produce json
+// @Security BasicAuth
+// @Security BearerAuth
+// @Param service path string true "service name"
+// @Param stage path string true "stage name"
+// @Param template path string true "template name"
+// @Param data body BoxInput true "Template content (Base64 encoded)"
+// @Success 200 {object} []string "List of updated paths"
+// @Failure 400 {object} problem.ProblemDetail "Bad Request"
+// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
+// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Router /api/box/{service}/{stage}/{template} [post].
+func (b *BoxHandler) UpsertBoxV2(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	service := r.PathValue("service")
+	stage := r.PathValue("stage")
+	templateName := r.PathValue("template")
+
+	var req BoxInput
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		b.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		return
+	}
+
+	box := &models.Box{
+		Service: service,
+		Stage: map[string]models.Stage{
+			stage: {
+				Template: models.Template{
+					Name:  templateName,
+					Value: req.Content,
+				},
+			},
+		},
+	}
+
+	result := b.store.UpsertBox(ctx, box)
 	b.render.JSON(w, r, result)
 }
 
@@ -136,8 +195,8 @@ func (b *BoxHandler) Build(w http.ResponseWriter, r *http.Request) {
 	service := r.PathValue("service")
 	stage := r.PathValue("stage")
 	template := r.PathValue("template")
-	args := make(map[string]string)
 
+	args := make(map[string]string)
 	for key := range r.URL.Query() {
 		if key == "service" || key == "stage" || key == "template" {
 			continue
@@ -145,9 +204,15 @@ func (b *BoxHandler) Build(w http.ResponseWriter, r *http.Request) {
 		args[key] = r.URL.Query().Get(key)
 	}
 
-	data, err := b.boxUseCase.BuildBox(ctx, service, stage, template, args)
+	opts := make([]usecases.BuildOption, 0)
+	if _, isStrict := r.URL.Query()["strict"]; isStrict {
+		opts = append(opts, usecases.WithBuildTemplateStrict())
+	}
+
+	data, err := b.boxUseCase.BuildBox(ctx, service, stage, template, args, opts...)
 	if err != nil {
-		b.render.Error(w, r, err, presenters.WithStatus(http.StatusNotFound))
+		status := b.resolveErrorStatus(err)
+		b.render.Error(w, r, err, presenters.WithStatus(status))
 		return
 	}
 
@@ -201,4 +266,35 @@ func (b *BoxHandler) ListVars(w http.ResponseWriter, r *http.Request) {
 
 	data := b.boxUseCase.ListVars(ctx, service, stage, template)
 	b.render.JSON(w, r, data)
+}
+
+// ListSchemaTypes
+// @Summary List Available Schema Types
+// @Description Get the list of supported storage backends
+// @Tags templates
+// @Produce json
+// @Security BasicAuth
+// @Security BearerAuth
+// @Success 200 {object} []string "List of schema types (e.g. json, txt)"
+// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
+// @Router /api/box/schemas [get].
+func (b *BoxHandler) ListSchemaTypes(w http.ResponseWriter, r *http.Request) {
+	types := b.resolver.GetImplementedSchemaTypes()
+	b.render.JSON(w, r, types)
+}
+
+// resolveErrorStatus maps domain errors to appropriate HTTP status codes.
+func (b *BoxHandler) resolveErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, domain.ErrMissingVariables):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrInvalidSyntax):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrInvalidTemplate):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrTemplateNotFound):
+		return http.StatusNotFound
+	default:
+		return http.StatusInternalServerError
+	}
 }
