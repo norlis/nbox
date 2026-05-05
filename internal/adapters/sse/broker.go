@@ -5,126 +5,217 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
 
-// Message es la estructura que se pasa por los canales internos y se envía a los clients.
+const (
+	subscriberBuffer = 20
+	keepAliveEvery   = 15 * time.Second
+	clientReconnect  = "retry: 5000\n\n"
+)
+
+// Message is the unit fanned out to every subscribed SSE client.
 type Message struct {
+	ID      string
 	Name    string
 	Payload []byte
 }
 
-// client representa a un único cliente suscrito, identificado por su ID.
-type client struct {
-	id      string
-	channel chan Message
-}
-
-// EventBroker gestiona los clients conectados y la difusión de eventos.
+// EventBroker is an in-memory pub/sub for SSE clients.
+//
+// Subscribers are tracked in a map keyed by client ID and protected by an
+// RWMutex so that fan-out (Publish) does not serialize against itself, only
+// against subscribe/unsubscribe.
 type EventBroker struct {
 	logger      *zap.Logger
-	clients     map[string]chan Message // Clave: ClientID
-	newClients  chan client
-	deadClients chan client
-	events      chan Message
-	mu          sync.Mutex
+	mu          sync.RWMutex
+	subscribers map[string]chan Message
+	closed      bool
 }
 
-// NewEventBroker ahora se integra con el ciclo de vida de fx.
 func NewEventBroker(lc fx.Lifecycle, logger *zap.Logger) *EventBroker {
-	broker := &EventBroker{
-		logger:  logger,
-		clients: make(map[string]chan Message),
-		// Añadimos un búfer para evitar bloqueos en el registro/desregistro.
-		newClients:  make(chan client, 10),
-		deadClients: make(chan client, 10),
-		events:      make(chan Message),
+	b := &EventBroker{
+		logger:      logger,
+		subscribers: make(map[string]chan Message),
 	}
 
-	brokerCtx, cancel := context.WithCancel(context.Background())
-
 	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			go broker.listen(brokerCtx)
-			logger.Info("Event broker started.")
+		OnStart: func(_ context.Context) error {
+			logger.Info("Event broker started")
 			return nil
 		},
-		OnStop: func(ctx context.Context) error {
-			logger.Info("Stopping event broker...")
-			cancel()
+		OnStop: func(_ context.Context) error {
+			b.shutdown()
+			logger.Info("Event broker stopped")
 			return nil
 		},
 	})
 
-	return broker
+	return b
 }
 
-func (b *EventBroker) listen(ctx context.Context) {
-	for {
+// Subscribe registers a client. If id is empty a UUID v7 is generated. If id
+// is already taken, the previous channel is closed (the old handler will exit
+// cleanly when it sees the closed channel) and a fresh one is installed.
+func (b *EventBroker) Subscribe(id string) (string, <-chan Message) {
+	if id == "" {
+		if u, err := uuid.NewV7(); err == nil {
+			id = u.String()
+		} else {
+			id = uuid.NewString()
+		}
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.closed {
+		ch := make(chan Message)
+		close(ch)
+		return id, ch
+	}
+
+	if old, ok := b.subscribers[id]; ok {
+		close(old)
+		b.logger.Debug("evicted previous subscriber with same id", zap.String("clientId", id))
+	}
+
+	ch := make(chan Message, subscriberBuffer)
+	b.subscribers[id] = ch
+	return id, ch
+}
+
+// Unsubscribe removes the client and closes its channel. Idempotent.
+func (b *EventBroker) Unsubscribe(id string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if ch, ok := b.subscribers[id]; ok {
+		delete(b.subscribers, id)
+		close(ch)
+	}
+}
+
+// Publish fans the message out to every active subscriber. Slow subscribers
+// (full buffer) drop the event rather than blocking the publisher.
+func (b *EventBroker) Publish(msg Message) {
+	if msg.ID == "" {
+		if u, err := uuid.NewV7(); err == nil {
+			msg.ID = u.String()
+		}
+	}
+
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	for id, ch := range b.subscribers {
 		select {
-		case <-ctx.Done():
-			b.logger.Info("Event broker shutting down.")
-			return
-		case c := <-b.newClients:
-			b.mu.Lock()
-			b.clients[c.id] = c.channel
-			b.mu.Unlock()
-			b.logger.Info("New SSE client connected", zap.String("clientId", c.id))
-		case c := <-b.deadClients:
-			b.mu.Lock()
-			delete(b.clients, c.id)
-			b.mu.Unlock()
-			close(c.channel)
-			b.logger.Info("SSE client disconnected", zap.String("clientId", c.id))
-		case event := <-b.events:
-			b.mu.Lock()
-			// Iteramos sobre los clients y usamos un envío no bloqueante.
-			for id, c := range b.clients {
-				select {
-				case c <- event:
-				default:
-					b.logger.Warn("Client channel is full, skipping event", zap.String("clientId", id))
-				}
-			}
-			b.mu.Unlock()
+		case ch <- msg:
+		default:
+			b.logger.Warn("subscriber buffer full, dropping event",
+				zap.String("clientId", id),
+				zap.String("event", msg.Name),
+			)
 		}
 	}
 }
 
-// ServeHTTP gestiona las conexiones entrantes de SSE.
-func (b *EventBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	clientID := r.URL.Query().Get("clientId")
-	if clientID == "" {
-		clientID = uuid.NewString()
+func (b *EventBroker) shutdown() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.closed = true
+	for id, ch := range b.subscribers {
+		close(ch)
+		delete(b.subscribers, id)
 	}
+}
+
+// ServeHTTP streams events to a single SSE client.
+func (b *EventBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	newClient := client{
-		id:      clientID,
-		channel: make(chan Message, 20),
-	}
-	b.newClients <- newClient
+	// Long-lived stream: clear any server-wide WriteTimeout for this request.
+	_ = rc.SetWriteDeadline(time.Time{})
 
-	defer func() {
-		b.deadClients <- newClient
-	}()
+	if err := rc.Flush(); err != nil {
+		b.logger.Error("streaming unsupported by ResponseWriter", zap.Error(err))
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	id, ch := b.Subscribe(r.URL.Query().Get("clientId"))
+	defer b.Unsubscribe(id)
+
+	b.logger.Debug("SSE client connected",
+		zap.String("clientId", id),
+		zap.String("remoteAddr", r.RemoteAddr),
+	)
+
+	if _, err := fmt.Fprint(w, clientReconnect); err != nil {
+		return
+	}
+	if err := rc.Flush(); err != nil {
+		return
+	}
+
+	ticker := time.NewTicker(keepAliveEvery)
+	defer ticker.Stop()
+
+	ctx := r.Context()
 
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
+			b.logger.Debug("SSE client disconnected", zap.String("clientId", id))
 			return
-		case msg := <-newClient.channel:
-			_, _ = fmt.Fprintf(w, "event: %s\n", msg.Name)
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", msg.Payload)
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
+
+		case msg, ok := <-ch:
+			if !ok {
+				b.logger.Debug("subscriber channel closed, terminating SSE stream",
+					zap.String("clientId", id),
+				)
+				return
+			}
+			if _, err := fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", msg.ID, msg.Name, msg.Payload); err != nil {
+				b.logger.Debug("failed to write event payload, dropping client",
+					zap.String("clientId", id),
+					zap.Error(err),
+				)
+				return
+			}
+			if err := rc.Flush(); err != nil {
+				b.logger.Debug("flush failed after event, dropping client",
+					zap.String("clientId", id),
+					zap.Error(err),
+				)
+				return
+			}
+
+		case <-ticker.C:
+			if _, err := fmt.Fprint(w, ":ping\n\n"); err != nil {
+				b.logger.Debug("failed to write keep-alive ping, dropping client",
+					zap.String("clientId", id),
+					zap.Error(err),
+				)
+				return
+			}
+			if err := rc.Flush(); err != nil {
+				b.logger.Debug("flush failed after ping, dropping client",
+					zap.String("clientId", id),
+					zap.Error(err),
+				)
+				return
 			}
 		}
 	}

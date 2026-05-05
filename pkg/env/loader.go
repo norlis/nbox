@@ -36,7 +36,7 @@ type fieldConfig struct {
 func parseStruct(val reflect.Value) error {
 	typ := val.Type()
 
-	for i := 0; i < val.NumField(); i++ {
+	for i := range val.NumField() {
 		fieldVal := val.Field(i)
 		structField := typ.Field(i)
 
