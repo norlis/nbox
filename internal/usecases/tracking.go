@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/middleware"
-	"go.uber.org/zap"
 	"nbox/internal/application"
 	"nbox/internal/domain"
 	"nbox/internal/domain/backend"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
+
+	"github.com/norlis/httpgate/pkg/adapter/apidriven/middleware"
+	"go.uber.org/zap"
 )
 
 type entryManagerWithTracking struct {
@@ -158,7 +159,7 @@ func (e *entryManagerWithTracking) Upsert(ctx context.Context, entries []models.
 }
 
 func (e *entryManagerWithTracking) Retrieve(ctx context.Context, key string, opts ...domain.RetrieveOption) (*models.Entry, error) {
-	return e.base.Retrieve(ctx, key, opts...)
+	return e.base.Retrieve(ctx, key, opts...) //nolint:wrapcheck
 }
 
 func (e *entryManagerWithTracking) Resolve(ctx context.Context, key string) (*models.Entry, error) {

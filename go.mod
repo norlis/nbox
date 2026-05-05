@@ -1,4 +1,4 @@
-	module nbox
+module nbox
 
 go 1.26
 

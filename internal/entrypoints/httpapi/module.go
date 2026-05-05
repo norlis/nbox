@@ -8,9 +8,36 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"nbox/internal/application"
+	"nbox/internal/entrypoints/api/handlers"
+)
+
+var Module = fx.Module("httpapi",
+	fx.Provide(presenters.NewPresenters),
+	fx.Provide(NewHttpServerMux),
+	fx.Invoke(NewHttpApi),
+	fx.Provide(handlers.NewUIHandler),
+
+	// fx.Provide(handlers.NewEntryHandler),
+	// fx.Provide(handlers.NewBoxHandler),
+	// fx.Provide(handlers.NewStaticHandler),
+	// fx.Provide(handlers.NewExportHandler),
+	// fx.Provide(handlers.NewPrefixConfigHandler),
+	// fx.Provide(handlers.NewTrackHandler),
+	// fx.Provide(handlers.NewBoxSpecHandler),
+
+	fx.Provide(
+		fx.Annotate(handlers.NewEntryHandler, fx.As(new(handlers.Route)), fx.ResultTags(`group:"routes"`)),
+		fx.Annotate(handlers.NewBoxHandler, fx.As(new(handlers.Route)), fx.ResultTags(`group:"routes"`)),
+		fx.Annotate(handlers.NewStaticHandler, fx.As(new(handlers.Route)), fx.ResultTags(`group:"routes"`)),
+		fx.Annotate(handlers.NewExportHandler, fx.As(new(handlers.Route)), fx.ResultTags(`group:"routes"`)),
+		fx.Annotate(handlers.NewPrefixConfigHandler, fx.As(new(handlers.Route)), fx.ResultTags(`group:"routes"`)),
+		fx.Annotate(handlers.NewTrackHandler, fx.As(new(handlers.Route)), fx.ResultTags(`group:"routes"`)),
+		fx.Annotate(handlers.NewBoxSpecHandler, fx.As(new(handlers.Route)), fx.ResultTags(`group:"routes"`)),
+	),
 )
 
 func NewHttpServerMux(lc fx.Lifecycle, logger *zap.Logger) *http.ServeMux {

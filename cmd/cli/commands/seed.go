@@ -10,11 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
-	"go.uber.org/fx"
 	"nbox/cmd/cli/bootstrap"
 	"nbox/internal/domain"
 	"nbox/internal/domain/backend"
+
+	"github.com/spf13/cobra"
+	"go.uber.org/fx"
 )
 
 // runSeed returns the Fx-invokable function.
@@ -70,7 +71,7 @@ func parseConfigs(content []byte) ([]backend.PrefixConfig, error) {
 	if bytes.HasPrefix(trimmed, []byte("[")) {
 		var configs []backend.PrefixConfig
 		if err := json.Unmarshal(content, &configs); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to unmarshal seed data: %w", err)
 		}
 		return configs, nil
 	}

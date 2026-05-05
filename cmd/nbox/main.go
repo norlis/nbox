@@ -21,7 +21,6 @@ import (
 	"nbox/internal/domain"
 	"nbox/internal/domain/strategies"
 	"nbox/internal/entrypoints/api/auth"
-	"nbox/internal/entrypoints/api/handlers"
 	"nbox/internal/entrypoints/httpapi"
 	"nbox/internal/usecases"
 	"nbox/pkg/logger"
@@ -106,15 +105,8 @@ func main() {
 		}),
 		fx.Decorate(usecases.NewEntryManagerWithTracking),
 
-		// Handlers
-		fx.Provide(handlers.NewEntryHandler),
-		fx.Provide(handlers.NewBoxHandler),
-		fx.Provide(handlers.NewStaticHandler),
-		fx.Provide(handlers.NewUIHandler),
-		fx.Provide(handlers.NewExportHandler),
-		fx.Provide(handlers.NewPrefixConfigHandler),
-		fx.Provide(handlers.NewTrackHandler),
-		fx.Provide(handlers.NewBoxSpecHandler),
+		// http
+		httpapi.Module,
 
 		// Use case
 		fx.Provide(strategies.NewStrategyResolver),
@@ -139,8 +131,6 @@ func main() {
 			}
 			return status.NewStatus(version)
 		}),
-		fx.Provide(presenters.NewPresenters),
-		fx.Provide(httpapi.NewHttpServerMux),
 		fx.Provide(func(config *application.Config) domain.UserRepository {
 			credentials := os.Getenv(config.CredentialsLoader.EnvVarKey)
 			repo, err := persistence.NewInMemoryUserRepository([]byte(credentials))
@@ -152,7 +142,6 @@ func main() {
 		fx.Provide(func(config *application.Config, render presenters.Presenters, logger *zap.Logger, repo domain.UserRepository) *auth.Authn {
 			return auth.NewAuthn(config.CredentialsLoader.EnvVarKey, config, render, logger, repo)
 		}),
-		fx.Invoke(httpapi.NewHttpApi),
 	)
 
 	if err := app.Err(); err != nil {

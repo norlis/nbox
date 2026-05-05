@@ -27,6 +27,13 @@ func NewBoxSpecHandler(registry *boxspec.SpecRegistry, render presenters.Present
 	return &BoxSpecHandler{registry: registry, render: render, resolver: resolver}
 }
 
+func (h *BoxSpecHandler) Register(api *http.ServeMux) {
+	api.HandleFunc("GET /api/boxspec/specs", h.List)
+	api.HandleFunc("GET /api/boxspec/resolve", h.Resolve)
+	api.HandleFunc("POST /api/boxspec/reload", h.Reload)
+	api.HandleFunc("POST /api/boxspec/validate", h.ValidateTemplate)
+}
+
 // List godoc
 // @Summary     List available validation specs
 // @Description Get list of schemas available for template validation

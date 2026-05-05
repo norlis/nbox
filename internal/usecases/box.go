@@ -91,11 +91,13 @@ func (b *BoxUseCase) BuildBox(ctx context.Context, service, stage, template stri
 }
 
 func (b *BoxUseCase) VarsBuilder(tmpl, service, stage, template string, args map[string]string) string {
-	oldnew := []string{
+	oldnew := make([]string, 0, 6+(len(args)*2))
+
+	oldnew = append(oldnew,
 		":service", service,
 		":stage", stage,
 		":template", template,
-	}
+	)
 
 	for k, v := range args {
 		oldnew = append(oldnew, ":"+strings.TrimSpace(k), v)

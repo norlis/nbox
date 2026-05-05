@@ -51,7 +51,7 @@ func (p *Processor) GetKeys() []string {
 }
 
 func (p *Processor) GetPrefixes() []string {
-	prefixes := map[string]bool{}
+	prefixes := make(map[string]struct{})
 	var k []string
 	for _, v := range p.vars {
 		cleaned := strings.TrimSpace(v)
@@ -61,7 +61,7 @@ func (p *Processor) GetPrefixes() []string {
 		}
 		if _, ok := prefixes[prefix]; !ok {
 			k = append(k, prefix)
-			prefixes[prefix] = true
+			prefixes[prefix] = struct{}{}
 		}
 	}
 	return k

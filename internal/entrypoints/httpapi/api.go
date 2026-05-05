@@ -24,23 +24,17 @@ import (
 
 type Params struct {
 	fx.In
-	Router              *http.ServeMux
-	Box                 *handlers.BoxHandler
-	Entry               *handlers.EntryHandler
-	Static              *handlers.StaticHandler
-	Authn               *auth.Authn
-	Status              *health.Status
-	Render              presenters.Presenters
-	Logger              *zap.Logger
-	S3Checker           *amazonaws.S3Checker
-	DynamoDBChecker     *amazonaws.DynamoDBChecker
-	SSMChecker          *amazonaws.SSMChecker
-	EventBroker         *sse.EventBroker
-	UI                  *handlers.UIHandler
-	Export              *handlers.ExportHandler
-	PrefixConfigHandler *handlers.PrefixConfigHandler
-	Tracker             *handlers.TrackHandler
-	BoxSpec             *handlers.BoxSpecHandler
+	Router          *http.ServeMux
+	Authn           *auth.Authn
+	Status          *health.Status
+	Render          presenters.Presenters
+	Logger          *zap.Logger
+	S3Checker       *amazonaws.S3Checker
+	DynamoDBChecker *amazonaws.DynamoDBChecker
+	SSMChecker      *amazonaws.SSMChecker
+	EventBroker     *sse.EventBroker
+	UI              *handlers.UIHandler
+	Routes          []handlers.Route `group:"routes"`
 }
 
 // NewHttpApi
@@ -106,42 +100,9 @@ func NewHttpApi(params Params) {
 
 	api := http.NewServeMux()
 
-	api.HandleFunc("POST /api/box", params.Box.UpsertBox) // Deprecated
-	api.HandleFunc("GET /api/box", params.Box.List)
-	api.HandleFunc("POST /api/box/{service}/{stage}/{template}", params.Box.UpsertBoxV2)
-
-	api.HandleFunc("HEAD /api/box/{service}/{stage}/{template}", params.Box.Exist)
-	api.HandleFunc("GET /api/box/{service}/{stage}/{template}", params.Box.Retrieve)
-	api.HandleFunc("GET /api/box/{service}/{stage}/{template}/build", params.Box.Build)
-	api.HandleFunc("GET /api/box/{service}/{stage}/{template}/vars", params.Box.ListVars)
-	api.HandleFunc("GET /api/box/schemas", params.Box.ListSchemaTypes)
-
-	api.HandleFunc("POST /api/entry", params.Entry.Upsert)
-	api.HandleFunc("GET /api/entry/key", params.Entry.GetByKey)
-	api.HandleFunc("GET /api/entry/prefix", params.Entry.ListByPrefix)
-	api.HandleFunc("GET /api/entry/export", params.Export.Export)
-	api.HandleFunc("DELETE /api/entry/key", params.Entry.DeleteKey)
-
-	// TODO: change to /api/entry/resolve for backends parameterstore, parameterstore_secure
-	api.HandleFunc("GET /api/entry/secret-value", params.Entry.Resolve) // Deprecated: use  endpoint /api/entry/resolve
-	api.HandleFunc("GET /api/entry/resolve", params.Entry.Resolve)
-
-	api.HandleFunc("POST /api/entry/lookup", params.Entry.RetrieveMany)
-
-	api.HandleFunc("GET /api/track/key", params.Tracker.Tracking)
-
-	api.HandleFunc("GET /api/static/stages", params.Static.Stages)
-	api.HandleFunc("GET /api/static/environments", params.Static.Environments) // Deprecated: Use /api/static/stages
-
-	api.HandleFunc("GET /api/prefix/resolve", params.PrefixConfigHandler.GetByPrefix)
-	api.HandleFunc("GET /api/prefix", params.PrefixConfigHandler.List)
-	api.HandleFunc("GET /api/prefix/backends", params.PrefixConfigHandler.ListBackends)
-
-	// boxspec
-	api.HandleFunc("GET /api/boxspec/specs", params.BoxSpec.List)
-	api.HandleFunc("GET /api/boxspec/resolve", params.BoxSpec.Resolve)
-	api.HandleFunc("POST /api/boxspec/reload", params.BoxSpec.Reload)
-	api.HandleFunc("POST /api/boxspec/validate", params.BoxSpec.ValidateTemplate)
+	for _, route := range params.Routes {
+		route.Register(api)
+	}
 
 	useAuth := middleware.Chain(
 		append(

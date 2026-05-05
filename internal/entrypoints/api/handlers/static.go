@@ -3,8 +3,9 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 	"nbox/internal/application"
+
+	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
 )
 
 type StaticHandler struct {
@@ -17,6 +18,11 @@ func NewStaticHandler(config *application.Config, render presenters.Presenters) 
 		config: config,
 		render: render,
 	}
+}
+
+func (s *StaticHandler) Register(api *http.ServeMux) {
+	api.HandleFunc("GET /api/static/stages", s.Stages)
+	api.HandleFunc("GET /api/static/environments", s.Environments) // Deprecated: Use /api/static/stages
 }
 
 // Stages godoc

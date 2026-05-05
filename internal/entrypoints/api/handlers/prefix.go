@@ -21,6 +21,12 @@ func NewPrefixConfigHandler(render presenters.Presenters, prefixConfig domain.Pr
 	}
 }
 
+func (h *PrefixConfigHandler) Register(api *http.ServeMux) {
+	api.HandleFunc("GET /api/prefix/resolve", h.GetByPrefix)
+	api.HandleFunc("GET /api/prefix", h.List)
+	api.HandleFunc("GET /api/prefix/backends", h.ListBackends)
+}
+
 // GetByPrefix
 // @Summary Prefix config
 // @Description plain value

@@ -31,6 +31,10 @@ func NewExportHandler(
 	}
 }
 
+func (h *ExportHandler) Register(api *http.ServeMux) {
+	api.HandleFunc("GET /api/entry/export", h.Export)
+}
+
 // Export godoc
 // @Summary      Export configuration entries
 // @Description  Export entries in different formats (JSON, YAML, dotenv, ECS tack definition) for backup or migration purposes

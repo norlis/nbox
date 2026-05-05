@@ -38,6 +38,18 @@ func NewBoxHandler(
 	return &BoxHandler{store: store, boxUseCase: boxUseCase, render: render, resolver: resolver}
 }
 
+func (b *BoxHandler) Register(api *http.ServeMux) {
+	api.HandleFunc("POST /api/box", b.UpsertBox) // Deprecated
+	api.HandleFunc("GET /api/box", b.List)
+	api.HandleFunc("POST /api/box/{service}/{stage}/{template}", b.UpsertBoxV2)
+
+	api.HandleFunc("HEAD /api/box/{service}/{stage}/{template}", b.Exist)
+	api.HandleFunc("GET /api/box/{service}/{stage}/{template}", b.Retrieve)
+	api.HandleFunc("GET /api/box/{service}/{stage}/{template}/build", b.Build)
+	api.HandleFunc("GET /api/box/{service}/{stage}/{template}/vars", b.ListVars)
+	api.HandleFunc("GET /api/box/schemas", b.ListSchemaTypes)
+}
+
 // UpsertBox
 // @Summary Upsert templates
 // @Description insert or update templates on s3

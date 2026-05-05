@@ -24,6 +24,10 @@ func NewTrackHandler(tracker domain.TrackingRepository, render presenters.Presen
 	}
 }
 
+func (h *TrackHandler) Register(api *http.ServeMux) {
+	api.HandleFunc("GET /api/track/key", h.Tracking)
+}
+
 // Tracking
 // @Summary History
 // @Description history changes

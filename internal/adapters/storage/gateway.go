@@ -8,11 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
 	"nbox/internal/domain"
 	"nbox/internal/domain/backend"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/models/operations"
+
+	"go.uber.org/zap"
 )
 
 type Gateway struct {
@@ -73,7 +74,7 @@ func (g *Gateway) RetrieveMany(ctx context.Context, keys []string) (map[string]*
 
 // Retrieve Index First.
 func (g *Gateway) Retrieve(ctx context.Context, key string, _ ...domain.RetrieveOption) (*models.Entry, error) {
-	return g.index.Retrieve(ctx, key)
+	return g.index.Retrieve(ctx, key) //nolint:wrapchecks
 }
 
 // Resolve optimized

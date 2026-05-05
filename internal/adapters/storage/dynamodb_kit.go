@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -39,11 +40,7 @@ func NewDynamodbKit(client *dynamodb.Client, logger *zap.Logger) *DynamodbKit {
 func (k *DynamodbKit) BatchWrite(ctx context.Context, tableName string, requests []types.WriteRequest) ([]types.WriteRequest, error) {
 	var totalFailed []types.WriteRequest
 
-	for i := 0; i < len(requests); i += DynamodbBatchWriteSize {
-		end := min(i+DynamodbBatchWriteSize, len(requests))
-
-		chunk := requests[i:end]
-
+	for chunk := range slices.Chunk(requests, DynamodbBatchWriteSize) {
 		// Backoff configuration for this specific chunk
 		b := backoff.NewExponentialBackOff()
 		b.MaxElapsedTime = 15 * time.Second // Max time retrying this chunk

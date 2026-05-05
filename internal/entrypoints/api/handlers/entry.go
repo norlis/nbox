@@ -28,6 +28,19 @@ func NewEntryHandler(store domain.EntryManager, render presenters.Presenters) *E
 	return &EntryHandler{store: store, render: render}
 }
 
+func (h *EntryHandler) Register(api *http.ServeMux) {
+	api.HandleFunc("POST /api/entry", h.Upsert)
+	api.HandleFunc("GET /api/entry/key", h.GetByKey)
+	api.HandleFunc("GET /api/entry/prefix", h.ListByPrefix)
+
+	api.HandleFunc("DELETE /api/entry/key", h.DeleteKey)
+
+	// TODO: change to /api/entry/resolve for backends parameterstore, parameterstore_secure
+	api.HandleFunc("GET /api/entry/secret-value", h.Resolve) // Deprecated: use  endpoint /api/entry/resolve
+	api.HandleFunc("GET /api/entry/resolve", h.Resolve)
+	api.HandleFunc("POST /api/entry/lookup", h.RetrieveMany)
+}
+
 // Upsert
 // @Summary Upsert entries
 // @Description insert / update vars

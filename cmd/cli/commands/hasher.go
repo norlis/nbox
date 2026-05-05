@@ -18,7 +18,7 @@ func generateSecurePassword(length int) (string, error) {
 	// Generate random bytes
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {
-		return "", err
+		return "", fmt.Errorf("error reading random bytes: %w", err)
 	}
 
 	// Encode to base64 URL-safe format (removes padding)
