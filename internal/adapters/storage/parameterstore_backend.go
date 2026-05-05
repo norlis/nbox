@@ -193,7 +193,7 @@ func (p *ParameterStoreBackend) Send(ctx context.Context, entry models.Entry) op
 }
 
 func (p *ParameterStoreBackend) getArn(rawKey string) string {
-	normalizedKey := p.pathUseCase.NormalizeKey(rawKey)
+	normalizedKey := strings.ToLower(p.pathUseCase.NormalizeKey(rawKey))
 
 	if p.config.ParameterShortArn {
 		if !strings.HasPrefix(normalizedKey, "/") {
@@ -213,7 +213,7 @@ func (p *ParameterStoreBackend) getArn(rawKey string) string {
 }
 
 func (p *ParameterStoreBackend) prepare(ctx context.Context, entry models.Entry, parameterStoreKeyId string) *ssm.PutParameterInput {
-	key := p.pathUseCase.NormalizeKey(entry.Key)
+	key := strings.ToLower(p.pathUseCase.NormalizeKey(entry.Key))
 
 	// Default: plain text (String type)
 	// Note: This backend CAN handle SecureString when entry.Secure=true,

@@ -109,7 +109,14 @@ func (b *BoxHandler) UpsertBoxV2(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := b.store.UpsertBox(ctx, box)
-	b.render.JSON(w, r, result)
+	status := http.StatusOK
+	for _, v := range result {
+		if !v.Valid {
+			status = http.StatusBadRequest
+			break
+		}
+	}
+	b.render.JSON(w, r, result, presenters.WithStatusCode(status))
 }
 
 // Exist

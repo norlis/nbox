@@ -111,6 +111,21 @@ func (r *SpecRegistry) Validate(ctx context.Context, specID string, data []byte,
 	return result, err
 }
 
+// ExportJSONSchema resolves a spec by filename pattern and exports it as JSON Schema.
+func (r *SpecRegistry) ExportJSONSchema(ctx context.Context, filename string) (SpecDefinition, []byte, error) {
+	spec, found := r.Resolve(filename)
+	if !found {
+		return SpecDefinition{}, nil, fmt.Errorf("no spec found matching: %s", filename)
+	}
+
+	data, err := r.engine.ExportJSONSchema(ctx, spec)
+	if err != nil {
+		return spec, nil, err
+	}
+
+	return spec, data, nil
+}
+
 // ValidateByFilename resolves spec from filename and validates.
 func (r *SpecRegistry) ValidateByFilename(ctx context.Context, filename string, data []byte, format string) (validation.Result, error) {
 	spec, found := r.Resolve(filename)

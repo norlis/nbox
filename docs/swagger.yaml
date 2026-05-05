@@ -587,6 +587,42 @@ paths:
       summary: Reload validation specs
       tags:
       - boxspec
+  /api/boxspec/resolve:
+    get:
+      description: Given a filename pattern, resolves the matching spec and returns
+        its JSON Schema representation
+      parameters:
+      - description: Filename pattern to match (e.g., task-definition.json)
+        in: query
+        name: pattern
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: JSON Schema
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Missing pattern parameter
+          schema:
+            $ref: '#/definitions/problem.ProblemDetail'
+        "404":
+          description: No matching spec found
+          schema:
+            $ref: '#/definitions/problem.ProblemDetail'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/problem.ProblemDetail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: Resolve spec and export as JSON Schema
+      tags:
+      - boxspec
   /api/boxspec/specs:
     get:
       description: Get list of schemas available for template validation
@@ -994,9 +1030,7 @@ paths:
       - prefix-config
   /api/static/environments:
     get:
-      deprecated: true
-      description: Returns the list of allowed prefixes. Use /api/static/tree-config
-        instead.
+      description: 'Deprecated: Use /api/static/stages instead.'
       produces:
       - application/json
       responses:
@@ -1014,6 +1048,28 @@ paths:
       - BasicAuth: []
       - BearerAuth: []
       summary: List allowed prefixes (Deprecated)
+      tags:
+      - static
+  /api/static/stages:
+    get:
+      description: Returns the list of available stages
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.ProblemDetail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: List available stages
       tags:
       - static
   /api/track/key:

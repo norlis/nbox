@@ -18,7 +18,7 @@ func (e *JSONExporter) Export(entries []models.Entry) ([]byte, error) {
 	normalized := make([]models.Entry, len(entries))
 	for i, entry := range entries {
 		normalized[i] = models.Entry{
-			Key:    fmt.Sprintf("%s/%v", entry.Path, entry.Key),
+			Key:    entry.Key,
 			Value:  entry.Value,
 			Secure: entry.Secure,
 		}

@@ -16,9 +16,10 @@ type EntryOutput struct {
 type Entry struct {
 	Path     string    `json:"path,omitempty"                     swaggerignore:"true"      yaml:"path,omitempty"`
 	Key      string    `example:"development/service/var-example" json:"key"                yaml:"key"`
+	ShortKey string    `json:"-"                                  swaggerignore:"true"      yaml:"-"`
 	Value    string    `example:"value 123"                       json:"value"              yaml:"value"`
 	Secure   bool      `example:"false"                           json:"secure"             yaml:"secure"`
-	Metadata *Metadata `json:"metadata,omitempty"                 yaml:"metadata,omitempty"`
+	Metadata *Metadata `json:"metadata"                           yaml:"metadata,omitempty"`
 }
 
 func (e *Entry) String() string {

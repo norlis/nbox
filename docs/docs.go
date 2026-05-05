@@ -73,14 +73,6 @@ const docTemplate = `{
         },
         "/api/box": {
             "get": {
-                "security": [
-                    {
-                        "BasicAuth": []
-                    },
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "description": "all templates",
                 "consumes": [
                     "application/json"
@@ -120,9 +112,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -130,7 +120,9 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "insert or update templates on s3",
                 "consumes": [
                     "application/json"
@@ -181,11 +173,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/box/schemas": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -193,7 +181,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/box/schemas": {
+            "get": {
                 "description": "Get the list of supported storage backends",
                 "produces": [
                     "application/json"
@@ -218,11 +210,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/box/{service}/{stage}/{template}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -230,7 +218,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/box/{service}/{stage}/{template}": {
+            "get": {
                 "description": "detail",
                 "produces": [
                     "text/plain"
@@ -281,9 +273,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -291,7 +281,9 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "description": "insert or update a specific template on s3",
                 "consumes": [
                     "application/json"
@@ -363,9 +355,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            },
-            "head": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -373,7 +363,9 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "head": {
                 "description": "Check the existence of the template",
                 "consumes": [
                     "application/json"
@@ -432,11 +424,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/box/{service}/{stage}/{template}/build": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -444,7 +432,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/box/{service}/{stage}/{template}/build": {
+            "get": {
                 "description": "replace vars patterns",
                 "produces": [
                     "text/plain"
@@ -495,11 +487,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/box/{service}/{stage}/{template}/vars": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -507,7 +495,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/box/{service}/{stage}/{template}/vars": {
+            "get": {
                 "description": "show all vars in template",
                 "produces": [
                     "application/json"
@@ -561,11 +553,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/boxspec/reload": {
-            "post": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -573,7 +561,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/boxspec/reload": {
+            "post": {
                 "description": "Hot-reload specs from filesystem without restart",
                 "produces": [
                     "application/json"
@@ -604,11 +596,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/boxspec/specs": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -616,7 +604,67 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
+                ]
+            }
+        },
+        "/api/boxspec/resolve": {
+            "get": {
+                "description": "Given a filename pattern, resolves the matching spec and returns its JSON Schema representation",
+                "produces": [
+                    "application/json"
                 ],
+                "tags": [
+                    "boxspec"
+                ],
+                "summary": "Resolve spec and export as JSON Schema",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filename pattern to match (e.g., task-definition.json)",
+                        "name": "pattern",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "JSON Schema",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Missing pattern parameter",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    },
+                    "404": {
+                        "description": "No matching spec found",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/boxspec/specs": {
+            "get": {
                 "description": "Get list of schemas available for template validation",
                 "produces": [
                     "application/json"
@@ -650,7 +698,15 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/api/boxspec/validate": {
@@ -695,14 +751,6 @@ const docTemplate = `{
         },
         "/api/entry": {
             "post": {
-                "security": [
-                    {
-                        "BasicAuth": []
-                    },
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "description": "insert / update vars",
                 "consumes": [
                     "application/json"
@@ -756,11 +804,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/entry/export": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -768,7 +812,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/entry/export": {
+            "get": {
                 "description": "Export entries in different formats (JSON, YAML, dotenv, ECS tack definition) for backup or migration purposes\nRequires authentication via Bearer token",
                 "produces": [
                     "application/json",
@@ -852,11 +900,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/entry/key": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -864,7 +908,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/entry/key": {
+            "get": {
                 "description": "detail",
                 "produces": [
                     "application/json"
@@ -901,9 +949,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -911,7 +957,9 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "description": "delete keys \u0026 children",
                 "produces": [
                     "application/json"
@@ -953,11 +1001,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/entry/lookup": {
-            "post": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -965,7 +1009,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/entry/lookup": {
+            "post": {
                 "description": "Retrieve values and metadata for a list of keys in a single request.",
                 "consumes": [
                     "application/json"
@@ -1013,11 +1061,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/entry/prefix": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -1025,7 +1069,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/entry/prefix": {
+            "get": {
                 "description": "list all keys by path",
                 "produces": [
                     "application/json"
@@ -1065,11 +1113,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/entry/resolve": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -1077,7 +1121,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/entry/resolve": {
+            "get": {
                 "description": "plain value",
                 "produces": [
                     "application/json"
@@ -1120,11 +1168,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/prefix": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -1132,7 +1176,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/prefix": {
+            "get": {
                 "description": "Get the list of configurations",
                 "produces": [
                     "application/json"
@@ -1157,11 +1205,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/prefix/backends": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -1169,7 +1213,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/prefix/backends": {
+            "get": {
                 "description": "Get the list of supported storage backends",
                 "produces": [
                     "application/json"
@@ -1194,11 +1242,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/prefix/resolve": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -1206,7 +1250,11 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/api/prefix/resolve": {
+            "get": {
                 "description": "plain value",
                 "produces": [
                     "application/json"
@@ -1249,11 +1297,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/static/environments": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -1261,8 +1305,12 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
-                ],
-                "description": "Returns the list of allowed prefixes. Use /api/static/tree-config instead.",
+                ]
+            }
+        },
+        "/api/static/environments": {
+            "get": {
+                "description": "Deprecated: Use /api/static/stages instead.",
                 "produces": [
                     "application/json"
                 ],
@@ -1270,7 +1318,6 @@ const docTemplate = `{
                     "static"
                 ],
                 "summary": "List allowed prefixes (Deprecated)",
-                "deprecated": true,
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1287,11 +1334,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
-            }
-        },
-        "/api/track/key": {
-            "get": {
+                },
                 "security": [
                     {
                         "BasicAuth": []
@@ -1299,7 +1342,48 @@ const docTemplate = `{
                     {
                         "BearerAuth": []
                     }
+                ]
+            }
+        },
+        "/api/static/stages": {
+            "get": {
+                "description": "Returns the list of available stages",
+                "produces": [
+                    "application/json"
                 ],
+                "tags": [
+                    "static"
+                ],
+                "summary": "List available stages",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/track/key": {
+            "get": {
                 "description": "history changes",
                 "produces": [
                     "application/json"
@@ -1351,7 +1435,15 @@ const docTemplate = `{
                             "$ref": "#/definitions/problem.ProblemDetail"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         }
     },

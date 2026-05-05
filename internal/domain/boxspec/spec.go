@@ -49,6 +49,9 @@ type SpecEngine interface {
 	// Validate checks data against a specific spec definition.
 	Validate(ctx context.Context, spec SpecDefinition, data []byte, format string) (validation.Result, error)
 
+	// ExportJSONSchema exports a spec definition as JSON Schema.
+	ExportJSONSchema(ctx context.Context, spec SpecDefinition) ([]byte, error)
+
 	// InvalidateCache clears any cached compiled schemas (called on reload).
 	InvalidateCache()
 }

@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -72,7 +71,7 @@ func (k *DynamodbKit) BatchWrite(ctx context.Context, tableName string, requests
 			// If there are unprocessed items (Throttling), update list and force error to retry
 			if len(out.UnprocessedItems) > 0 {
 				unprocessed = out.UnprocessedItems[tableName]
-				return errors.New("dynamodb throttling: partial batch processed")
+				return &resiliency.PartialBatchError{Remaining: len(unprocessed)}
 			}
 
 			// Full chunk success
@@ -167,7 +166,7 @@ func (k *DynamodbKit) processGetChunk(
 		// Partial batch - Guard will retry with backoff
 		if len(out.UnprocessedKeys) > 0 {
 			currentKeys = out.UnprocessedKeys[tableName].Keys
-			return fmt.Errorf("partial batch: %d keys remaining", len(currentKeys))
+			return &resiliency.PartialBatchError{Remaining: len(currentKeys)}
 		}
 
 		currentKeys = nil

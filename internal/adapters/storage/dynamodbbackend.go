@@ -161,6 +161,7 @@ func (d *DynamoDBBackend) Upsert(ctx context.Context, entries []models.Entry) op
 					Action:         "upsert",
 					StorageBackend: storageType,
 					Fingerprint:    entry.Metadata.Fingerprint,
+					Version:        entry.Metadata.Version,
 				},
 			},
 		}
@@ -268,6 +269,7 @@ func (d *DynamoDBBackend) Retrieve(ctx context.Context, key string, _ ...domain.
 
 	return &models.Entry{
 		Key:      d.pathUseCase.Concat(record.Path, record.Key),
+		ShortKey: record.Key,
 		Value:    string(record.Value),
 		Secure:   record.Metadata.Secure,
 		Metadata: &record.Metadata,
@@ -307,10 +309,12 @@ func (d *DynamoDBBackend) List(ctx context.Context, prefix string) ([]models.Ent
 		for _, r := range records {
 			if !strings.HasPrefix(r.Key, DynamoDBLockPrefix) {
 				entries = append(entries, models.Entry{
-					Key:    d.pathUseCase.Concat(r.Path, r.Key),
-					Value:  string(r.Value),
-					Path:   r.Path,
-					Secure: r.Metadata.Secure,
+					Key:      d.pathUseCase.Concat(r.Path, r.Key),
+					ShortKey: r.Key,
+					Value:    string(r.Value),
+					Path:     r.Path,
+					Secure:   r.Metadata.Secure,
+					Metadata: &r.Metadata,
 				})
 			}
 		}

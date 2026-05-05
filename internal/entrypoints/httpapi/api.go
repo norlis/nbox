@@ -130,8 +130,8 @@ func NewHttpApi(params Params) {
 
 	api.HandleFunc("GET /api/track/key", params.Tracker.Tracking)
 
-	// TODO: Deprecated
-	api.HandleFunc("GET /api/static/environments", params.Static.Environments) // Deprecated: Use endpoint /api/prefix
+	api.HandleFunc("GET /api/static/stages", params.Static.Stages)
+	api.HandleFunc("GET /api/static/environments", params.Static.Environments) // Deprecated: Use /api/static/stages
 
 	api.HandleFunc("GET /api/prefix/resolve", params.PrefixConfigHandler.GetByPrefix)
 	api.HandleFunc("GET /api/prefix", params.PrefixConfigHandler.List)
@@ -139,6 +139,7 @@ func NewHttpApi(params Params) {
 
 	// boxspec
 	api.HandleFunc("GET /api/boxspec/specs", params.BoxSpec.List)
+	api.HandleFunc("GET /api/boxspec/resolve", params.BoxSpec.Resolve)
 	api.HandleFunc("POST /api/boxspec/reload", params.BoxSpec.Reload)
 	api.HandleFunc("POST /api/boxspec/validate", params.BoxSpec.ValidateTemplate)
 

@@ -37,7 +37,7 @@ func (e *ECSTaskDefExporter) Export(entries []models.Entry) ([]byte, error) {
 	}
 
 	for _, entry := range entries {
-		envVarName := domain.ConvertToEnvVarName(entry.Key)
+		envVarName := domain.ConvertToEnvVarName(entry.ShortKey)
 
 		if entry.Secure {
 			result.Secrets = append(result.Secrets, ECSSecret{

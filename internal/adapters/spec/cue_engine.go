@@ -2,6 +2,7 @@ package spec
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/errors"
 	cuejson "cuelang.org/go/encoding/json"
+	"cuelang.org/go/encoding/openapi"
 	cueyaml "cuelang.org/go/encoding/yaml"
 	"nbox/internal/domain/boxspec"
 	"nbox/internal/domain/validation"
@@ -60,6 +62,56 @@ func (e *CueEngine) Validate(ctx context.Context, spec boxspec.SpecDefinition, d
 	}
 
 	return validation.NewResult(), nil
+}
+
+// ExportJSONSchema exports only the #Schema definition from a CUE spec as JSON Schema.
+func (e *CueEngine) ExportJSONSchema(ctx context.Context, spec boxspec.SpecDefinition) ([]byte, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	val := e.ctx.CompileString(spec.RawContent)
+	if val.Err() != nil {
+		return nil, fmt.Errorf("failed to compile spec: %w", val.Err())
+	}
+
+	schema := val.LookupPath(cue.ParsePath("#Schema"))
+	if !schema.Exists() {
+		return nil, fmt.Errorf("spec %s missing #Schema definition", spec.ID)
+	}
+
+	// Wrap #Schema in a definition so openapi.Generate produces a single component
+	wrapped := e.ctx.CompileString("#Schema: _", cue.Scope(val))
+	wrapped = wrapped.FillPath(cue.ParsePath("#Schema"), schema)
+
+	f, err := openapi.Generate(wrapped, &openapi.Config{
+		SelfContained: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate OpenAPI schema: %w", err)
+	}
+
+	built := e.ctx.BuildFile(f)
+	if built.Err() != nil {
+		return nil, fmt.Errorf("failed to build OpenAPI value: %w", built.Err())
+	}
+
+	// Extract only the Schema component from the OpenAPI output
+	schemaComponent := built.LookupPath(cue.ParsePath("components.schemas.Schema"))
+	if !schemaComponent.Exists() {
+		return nil, errors.New("failed to extract Schema from OpenAPI output")
+	}
+
+	var raw any
+	if err := schemaComponent.Decode(&raw); err != nil {
+		return nil, fmt.Errorf("failed to decode JSON Schema: %w", err)
+	}
+
+	b, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal JSON Schema: %w", err)
+	}
+
+	return b, nil
 }
 
 // InvalidateCache clears the compiled schema cache.

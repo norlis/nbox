@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -60,6 +61,44 @@ func (h *BoxSpecHandler) Reload(w http.ResponseWriter, r *http.Request) {
 	}
 	specs := h.registry.List()
 	h.render.JSON(w, r, map[string]int{"loaded": len(specs)})
+}
+
+// Resolve godoc
+// @Summary     Resolve spec and export as JSON Schema
+// @Description Given a filename pattern, resolves the matching spec and returns its JSON Schema representation
+// @Tags        boxspec
+// @Produce     json
+// @Security 	BasicAuth
+// @Security 	BearerAuth
+// @Param       pattern query    string true "Filename pattern to match (e.g., task-definition.json)"
+// @Success     200 {object} map[string]interface{} "JSON Schema"
+// @Failure     400 {object} problem.ProblemDetail "Missing pattern parameter"
+// @Failure     404 {object} problem.ProblemDetail "No matching spec found"
+// @Failure     500 {object} problem.ProblemDetail "Internal error"
+// @Router      /api/boxspec/resolve [get].
+func (h *BoxSpecHandler) Resolve(w http.ResponseWriter, r *http.Request) {
+	pattern := r.URL.Query().Get("pattern")
+	if pattern == "" {
+		h.render.Error(w, r, errors.New("missing required query parameter: pattern"), presenters.WithStatus(http.StatusBadRequest))
+		return
+	}
+
+	spec, schemaBytes, err := h.registry.ExportJSONSchema(r.Context(), pattern)
+	if err != nil {
+		h.render.Error(w, r, err, presenters.WithStatus(http.StatusUnprocessableEntity))
+		return
+	}
+
+	var schema any
+	if err := json.Unmarshal(schemaBytes, &schema); err != nil {
+		h.render.Error(w, r, err, presenters.WithStatus(http.StatusInternalServerError))
+		return
+	}
+
+	h.render.JSON(w, r, map[string]any{
+		"spec":   spec,
+		"schema": schema,
+	})
 }
 
 // ValidateTemplate

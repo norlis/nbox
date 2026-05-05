@@ -19,7 +19,7 @@ func (e *DotEnvExporter) Export(entries []models.Entry) ([]byte, error) {
 	var builder strings.Builder
 
 	for _, entry := range entries {
-		key := domain.ConvertToEnvVarName(entry.Key)
+		key := domain.ConvertToEnvVarName(entry.ShortKey)
 		value := e.escapeValue(entry.Value)
 		fmt.Fprintf(&builder, "%s=%s\n", key, value)
 	}

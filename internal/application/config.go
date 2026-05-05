@@ -39,6 +39,9 @@ type Config struct {
 	// --- app ---
 	DefaultPrefix string `env:"NBOX_DEFAULT_PREFIX" envDefault:"global" pkl:"defaultPrefix"` // default prefix for entries
 
+	// --- Stages ---
+	Stages []string `env:"NBOX_STAGES" envDefault:"development,qa,beta,sandbox,production,dr" envSeparator:"," pkl:"stages"` // Available stages
+
 	// --- Legacy (deprecated) ---
 	AllowedPrefixes []string `env:"NBOX_ALLOWED_PREFIXES" envDefault:"development/,qa/,beta/,production/" envSeparator:"," pkl:"allowedPrefixes"` // Deprecated: list of allowed prefixes
 
