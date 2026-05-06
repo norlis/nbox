@@ -221,6 +221,62 @@ const docTemplate = `{
                 ]
             }
         },
+        "/api/box/{service}/{stage}": {
+            "get": {
+                "description": "show metadadata \u0026 template name",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "templates"
+                ],
+                "summary": "Stage detail",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "service name",
+                        "name": "service",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "stage",
+                        "name": "stage",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/nbox_internal_domain_models.Stage"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/problem.ProblemDetail"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BasicAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
         "/api/box/{service}/{stage}/{template}": {
             "get": {
                 "description": "detail",
@@ -1759,7 +1815,7 @@ const docTemplate = `{
     }
 }`
 
-// SwaggerInfo holds exported Swagger Info so clients can modify it.
+// SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "2.0",
 	Host:             "",

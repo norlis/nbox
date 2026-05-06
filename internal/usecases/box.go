@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"nbox/internal/domain/models"
 	"strings"
 
 	"nbox/internal/domain"
@@ -41,6 +42,14 @@ func NewBox(
 		pathUseCase:     pathUseCase,
 		resolver:        resolver,
 	}
+}
+
+func (b *BoxUseCase) Detail(ctx context.Context, service, stage string) (*models.Stage, error) {
+	result, err := b.templateAdapter.Detail(ctx, service, stage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get detail: %w", err)
+	}
+	return result, nil
 }
 
 func (b *BoxUseCase) BuildBox(ctx context.Context, service, stage, template string, args map[string]string, opts ...BuildOption) (string, error) {

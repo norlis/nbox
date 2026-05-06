@@ -20,6 +20,7 @@ type TemplateAdapter interface {
 	BoxExists(ctx context.Context, service, stage, template string) (bool, error)
 	RetrieveBox(ctx context.Context, service, stage, template string) ([]byte, error)
 	List(ctx context.Context) ([]models.Box, error)
+	Detail(ctx context.Context, service, stage string) (*models.Stage, error)
 }
 
 // EntryAdapter vars backend operations.

@@ -5,12 +5,13 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
-	_ "github.com/norlis/httpgate/pkg/kit/problem"
 	"nbox/internal/domain"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/strategies"
 	"nbox/internal/usecases"
+
+	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
+	_ "github.com/norlis/httpgate/pkg/kit/problem"
 )
 
 type BoxInput struct {
@@ -45,6 +46,7 @@ func (b *BoxHandler) Register(api *http.ServeMux) {
 
 	api.HandleFunc("HEAD /api/box/{service}/{stage}/{template}", b.Exist)
 	api.HandleFunc("GET /api/box/{service}/{stage}/{template}", b.Retrieve)
+	api.HandleFunc("GET /api/box/{service}/{stage}", b.Stage)
 	api.HandleFunc("GET /api/box/{service}/{stage}/{template}/build", b.Build)
 	api.HandleFunc("GET /api/box/{service}/{stage}/{template}/vars", b.ListVars)
 	api.HandleFunc("GET /api/box/schemas", b.ListSchemaTypes)
@@ -260,6 +262,31 @@ func (b *BoxHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	b.render.JSON(w, r, data)
+}
+
+// Stage
+// @Summary Stage detail
+// @Description show metadadata & template name
+// @Tags templates
+// @Produce json
+// @Param service path string true "service name"
+// @Param stage path string true "stage"
+// @Security 	 BasicAuth
+// @Security 	 BearerAuth
+// @Success 200 {object}  models.Stage ""
+// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
+// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Router /api/box/{service}/{stage} [get].
+func (b *BoxHandler) Stage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	service := r.PathValue("service")
+	stage := r.PathValue("stage")
+	data, err := b.boxUseCase.Detail(ctx, service, stage)
+	if err != nil {
+		b.render.Error(w, r, err, presenters.WithStatus(http.StatusNotFound))
+		return
+	}
 	b.render.JSON(w, r, data)
 }
 

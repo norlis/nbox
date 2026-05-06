@@ -320,6 +320,41 @@ paths:
       summary: Upsert templates
       tags:
       - templates
+  /api/box/{service}/{stage}:
+    get:
+      description: show metadadata & template name
+      parameters:
+      - description: service name
+        in: path
+        name: service
+        required: true
+        type: string
+      - description: stage
+        in: path
+        name: stage
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nbox_internal_domain_models.Stage'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.ProblemDetail'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/problem.ProblemDetail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: Stage detail
+      tags:
+      - templates
   /api/box/{service}/{stage}/{template}:
     get:
       description: detail

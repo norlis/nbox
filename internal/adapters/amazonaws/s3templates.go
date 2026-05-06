@@ -10,18 +10,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"go.uber.org/zap"
 	"nbox/internal/application"
 	"nbox/internal/domain"
 	"nbox/internal/domain/boxspec"
 	"nbox/internal/domain/models"
 	"nbox/internal/domain/strategies"
 	"nbox/internal/domain/validation"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"go.uber.org/zap"
 )
 
 type s3TemplateStore struct {
@@ -175,33 +176,29 @@ func (b *s3TemplateStore) UpsertBox(ctx context.Context, box *models.Box) map[st
 			UpdatedBy = user.Name
 		}
 
-		if err == nil {
-			item, _ = attributevalue.MarshalMap(BoxRecord{
-				Service: box.Service,
-				Stage:   stageName,
-				Template: models.Template{
-					Name:  s3path,
-					Value: name,
-				},
-				Metadata: models.TemplateMetadata{
-					Version:   versionId,
-					UpdatedAt: time.Now().UTC(),
-					UpdatedBy: UpdatedBy,
-					Hash:      hash,
-				},
-			})
-			_, err = b.dynamodbClient.PutItem(ctx, &dynamodb.PutItemInput{
-				TableName: aws.String(b.config.BoxTableName), Item: item,
-			})
-			if err != nil {
-				b.logger.Warn("ErrDbStoreTemplate", zap.String("path", s3path), zap.Error(err))
-			}
+		//if err == nil {
+		item, _ = attributevalue.MarshalMap(BoxRecord{
+			Service: box.Service,
+			Stage:   stageName,
+			Template: models.Template{
+				Name:  s3path,
+				Value: name,
+			},
+			Metadata: models.TemplateMetadata{
+				Version:   versionId,
+				UpdatedAt: time.Now().UTC(),
+				UpdatedBy: UpdatedBy,
+				Hash:      hash,
+			},
+		})
+		_, err = b.dynamodbClient.PutItem(ctx, &dynamodb.PutItemInput{
+			TableName: aws.String(b.config.BoxTableName), Item: item,
+		})
+		if err != nil {
+			b.logger.Warn("ErrDbStoreTemplate", zap.String("path", s3path), zap.Error(err))
 		}
-
-		// if err == nil {
-		//	//result[s3path] = append(result, s3path)
-		//	result = append(result, s3path)
 		//}
+
 	}
 	return result
 }
@@ -229,7 +226,7 @@ func (b *s3TemplateStore) List(ctx context.Context) ([]models.Box, error) {
 		if !ok {
 			boxes[record.Service] = models.Box{Service: record.Service, Stage: map[string]models.Stage{}}
 		}
-		boxes[record.Service].Stage[record.Stage] = models.Stage{Template: record.Template}
+		boxes[record.Service].Stage[record.Stage] = models.Stage{Template: record.Template, Metadata: record.Metadata}
 	}
 
 	for _, box := range boxes {
@@ -237,4 +234,31 @@ func (b *s3TemplateStore) List(ctx context.Context) ([]models.Box, error) {
 	}
 
 	return results, nil
+}
+
+func (b *s3TemplateStore) Detail(ctx context.Context, service, stage string) (*models.Stage, error) {
+	p, _ := attributevalue.Marshal(service)
+	k, _ := attributevalue.Marshal(stage)
+
+	resp, err := b.dynamodbClient.GetItem(ctx, &dynamodb.GetItemInput{
+		Key:            map[string]types.AttributeValue{"Service": p, "Stage": k},
+		TableName:      aws.String(b.config.BoxTableName),
+		ConsistentRead: aws.Bool(true),
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get item from DynamoDB: %w", err)
+	}
+	if resp.Item == nil {
+		return nil, nil // Not found
+	}
+
+	record := &BoxRecord{}
+	if err = attributevalue.UnmarshalMap(resp.Item, record); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal: %w", err)
+	}
+	return &models.Stage{
+		Template: record.Template,
+		Metadata: record.Metadata,
+	}, nil
 }
