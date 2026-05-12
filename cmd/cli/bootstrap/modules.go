@@ -2,22 +2,22 @@ package bootstrap
 
 import (
 	"go.uber.org/fx"
-	"nbox/internal/adapters/amazonaws"
-	"nbox/internal/adapters/storage"
-	"nbox/internal/usecases"
+	"nbox/internal/entry"
+	platformaws "nbox/internal/platform/aws"
+	prefixstore "nbox/internal/prefix/store"
 	"nbox/pkg/logger"
 )
 
 var CommonModules = fx.Options(
 	fx.NopLogger, // Silenciar logs de Fx
 	fx.Provide(logger.NewLogger),
-	fx.Provide(amazonaws.NewAwsConfig),
-	fx.Provide(amazonaws.NewDynamodbClient),
+
+	// platform: AWS config, clients, kit, health
+	platformaws.Module,
 
 	// Use case
-	fx.Provide(usecases.NewPathUseCase),
+	fx.Provide(entry.NewProcessor),
 
 	// Adapters
-	fx.Provide(storage.NewDynamodbKit),
-	fx.Provide(storage.NewDynamoPrefixConfigRepository),
+	fx.Provide(prefixstore.NewDynamoDB),
 )

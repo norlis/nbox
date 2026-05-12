@@ -10,18 +10,16 @@ import (
 	"strings"
 	"time"
 
-	"nbox/cmd/cli/bootstrap"
-	"nbox/internal/domain"
-	"nbox/internal/domain/backend"
-
 	"github.com/spf13/cobra"
 	"go.uber.org/fx"
+	"nbox/cmd/cli/bootstrap"
+	"nbox/internal/prefix"
 )
 
 // runSeed returns the Fx-invokable function.
 // It receives a reader already prepared to decouple Fx logic from file handling.
-func runSeed(reader io.Reader, sourceDescription string) func(domain.PrefixConfigRepository, fx.Shutdowner) {
-	return func(repo domain.PrefixConfigRepository, shutdowner fx.Shutdowner) {
+func runSeed(reader io.Reader, sourceDescription string) func(prefix.Store, fx.Shutdowner) {
+	return func(repo prefix.Store, shutdowner fx.Shutdowner) {
 		// Ensure shutdown on exit
 		defer func() { _ = shutdowner.Shutdown() }()
 
@@ -64,12 +62,12 @@ func runSeed(reader io.Reader, sourceDescription string) func(domain.PrefixConfi
 }
 
 // parseConfigs parses JSON that can be either an array [...] or a single object {...}.
-func parseConfigs(content []byte) ([]backend.PrefixConfig, error) {
+func parseConfigs(content []byte) ([]prefix.Config, error) {
 	trimmed := bytes.TrimSpace(content)
 
 	// Try as array first
 	if bytes.HasPrefix(trimmed, []byte("[")) {
-		var configs []backend.PrefixConfig
+		var configs []prefix.Config
 		if err := json.Unmarshal(content, &configs); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal seed data: %w", err)
 		}
@@ -77,15 +75,15 @@ func parseConfigs(content []byte) ([]backend.PrefixConfig, error) {
 	}
 
 	// Try as single object and convert to slice
-	var single backend.PrefixConfig
+	var single prefix.Config
 	if err := json.Unmarshal(content, &single); err != nil {
 		return nil, err
 	}
-	return []backend.PrefixConfig{single}, nil
+	return []prefix.Config{single}, nil
 }
 
 // prepareConfigs sets timestamps and audit fields.
-func prepareConfigs(configs []backend.PrefixConfig) {
+func prepareConfigs(configs []prefix.Config) {
 	now := time.Now().UTC()
 	for i := range configs {
 		if configs[i].CreatedAt.IsZero() {
@@ -130,7 +128,7 @@ func printError(msg string, err error) {
 }
 
 // printSummary displays the operation summary.
-func printSummary(stats backend.UpsertStats, total int, err error) {
+func printSummary(stats prefix.UpsertStats, total int, err error) {
 	if err != nil {
 		fmt.Printf("\n⚠️  Warning: Batch operation reported errors: %v\n", err)
 	}

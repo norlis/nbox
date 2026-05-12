@@ -436,6 +436,52 @@ flowchart TD
     class STATUS,LOGS health
 ```
 
+## Project Structure
+
+NBOX is organized using **Package-Oriented Design** combined with **Clean Architecture** principles. Each business domain is a self-contained package that owns its model, interfaces, business logic, HTTP handler, and storage adapter. Technical layers (all models together, all handlers together) are intentionally avoided.
+
+```
+cmd/
+  nbox/          → HTTP API binary (fx wiring only)
+  entrypushd/    → gRPC push daemon (fx wiring only)
+  cli/           → CLI client
+  hasher/        → bcrypt password utility
+
+internal/
+  entry/         → Entry domain: model, store interface, service, HTTP handler
+  box/           → Box/template domain: model, S3 store, CUE spec, handler
+  export/        → Export domain: formats (dotenv, JSON, YAML, ECS task def)
+  tracking/      → Change history: model, DynamoDB store, handler
+  prefix/        → Prefix configuration: model, DynamoDB store, handler
+  event/         → Internal event bus: publisher interface, SSE broker, NATS/SNS adapters
+  auth/          → Authentication: User/Identity models, OPA enforcement, in-memory store
+  vault/         → Vault/passbox domain: secure entry rules, agent pubkey registry
+  entrypushd/    → gRPC daemon internals: auth, streaming, envelope encryption, registry
+  transport/
+    http/        → Router setup, global middleware (JWT, Basic Auth) — no endpoint logic
+    grpc/        → gRPC server setup, auth interceptor
+  application/   → Config (env vars) + build metadata (Port, Address, GitHash)
+
+platform/        → Generic infrastructure with no business logic
+  aws/           → AWS SDK config, DynamoDB/SSM/S3 clients, health checkers
+
+pkg/             → Shared utilities (logger, env loader, circuit breaker)
+policies/        → OPA Rego authorization policies + tests
+specs/           → CUE schema files for template validation
+```
+
+### Key conventions
+
+**Each domain is autonomous.** Everything about `entry` lives in `internal/entry/`. To understand or modify an entry, you read one package.
+
+**Store interfaces live in the domain root.** The domain defines the contract; the implementation fulfills it.
+
+**Each domain exposes a `module.go`.** It declares its own `fx.Module` with providers and lifecycle hooks. `cmd/` only composes modules — it never calls `fx.Provide` directly.
+
+
+
+---
+
 ## Security playground
 
 ### Roles

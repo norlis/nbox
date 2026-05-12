@@ -6,47 +6,50 @@ import (
 	"log"
 	"os"
 
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
-	status "github.com/norlis/httpgate/pkg/application/health"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"nbox/internal/adapters/amazonaws"
-	"nbox/internal/adapters/persistence"
-	"nbox/internal/adapters/spec"
-	"nbox/internal/adapters/sse"
-	"nbox/internal/adapters/storage"
 	"nbox/internal/application"
-	"nbox/internal/domain"
-	"nbox/internal/domain/strategies"
-	"nbox/internal/entrypoints/api/auth"
-	"nbox/internal/entrypoints/httpapi"
-	"nbox/internal/usecases"
+	auth "nbox/internal/auth"
+	authstore "nbox/internal/auth/store"
+	"nbox/internal/box"
+	boxstore "nbox/internal/box/store"
+	"nbox/internal/entry"
+	entrystore "nbox/internal/entry/store"
+	"nbox/internal/event"
+	"nbox/internal/event/bus"
+	"nbox/internal/export"
+	platformaws "nbox/internal/platform/aws"
+	"nbox/internal/prefix"
+	prefixstore "nbox/internal/prefix/store"
+	"nbox/internal/tracking"
+	trackingstore "nbox/internal/tracking/store"
+	transporthttp "nbox/internal/transport/http"
 	"nbox/pkg/logger"
 )
 
 // banner
 // https://patorjk.com/software/taag/#p=display&f=Doh&t=NBOX
 const banner = `
-                                                                                    
+
 NNNNNNNN        NNNNNNNNBBBBBBBBBBBBBBBBB        OOOOOOOOO     XXXXXXX       XXXXXXX
 N:::::::N       N::::::NB::::::::::::::::B     OO:::::::::OO   X:::::X       X:::::X
 N::::::::N      N::::::NB::::::BBBBBB:::::B  OO:::::::::::::OO X:::::X       X:::::X
 N:::::::::N     N::::::NBB:::::B     B:::::BO:::::::OOO:::::::OX::::::X     X::::::X
 N::::::::::N    N::::::N  B::::B     B:::::BO::::::O   O::::::OXXX:::::X   X:::::XXX
-N:::::::::::N   N::::::N  B::::B     B:::::BO:::::O     O:::::O   X:::::X X:::::X   
-N:::::::N::::N  N::::::N  B::::BBBBBB:::::B O:::::O     O:::::O    X:::::X:::::X    
-N::::::N N::::N N::::::N  B:::::::::::::BB  O:::::O     O:::::O     X:::::::::X     
-N::::::N  N::::N:::::::N  B::::BBBBBB:::::B O:::::O     O:::::O     X:::::::::X     
-N::::::N   N:::::::::::N  B::::B     B:::::BO:::::O     O:::::O    X:::::X:::::X    
-N::::::N    N::::::::::N  B::::B     B:::::BO:::::O     O:::::O   X:::::X X:::::X   
+N:::::::::::N   N::::::N  B::::B     B:::::BO:::::O     O:::::O   X:::::X X:::::X
+N:::::::N::::N  N::::::N  B::::BBBBBB:::::B O:::::O     O:::::O    X:::::X:::::X
+N::::::N N::::N N::::::N  B:::::::::::::BB  O:::::O     O:::::O     X:::::::::X
+N::::::N  N::::N:::::::N  B::::BBBBBB:::::B O:::::O     O:::::O     X:::::::::X
+N::::::N   N:::::::::::N  B::::B     B:::::BO:::::O     O:::::O    X:::::X:::::X
+N::::::N    N::::::::::N  B::::B     B:::::BO:::::O     O:::::O   X:::::X X:::::X
 N::::::N     N:::::::::N  B::::B     B:::::BO::::::O   O::::::OXXX:::::X   X:::::XXX
 N::::::N      N::::::::NBB:::::BBBBBB::::::BO:::::::OOO:::::::OX::::::X     X::::::X
 N::::::N       N:::::::NB:::::::::::::::::B  OO:::::::::::::OO X:::::X       X:::::X
 N::::::N        N::::::NB::::::::::::::::B     OO:::::::::OO   X:::::X       X:::::X
 NNNNNNNN         NNNNNNNBBBBBBBBBBBBBBBBB        OOOOOOOOO     XXXXXXX       XXXXXXX
-                                                                                    
+
 `
 
 func main() {
@@ -58,90 +61,64 @@ func main() {
 
 	app := fx.New(
 		fx.Provide(logger.NewLogger),
-		// fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
-		//	return &fxevent.ZapLogger{Logger: log}
-		// }),
 		fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
 			return &fxevent.ZapLogger{Logger: log.WithOptions(zap.IncreaseLevel(zapcore.WarnLevel))}
 		}),
-		fx.Provide(amazonaws.NewAwsConfig),
-		fx.Provide(amazonaws.NewS3Client),
-		fx.Provide(amazonaws.NewDynamodbClient),
-		fx.Provide(amazonaws.NewSsmClient),
 
-		// Checkers (health | status | live | ready)
-		fx.Provide(amazonaws.NewS3Checker),
-		fx.Provide(amazonaws.NewDynamoDBChecker),
-		fx.Provide(amazonaws.NewSSMChecker),
+		// Core infrastructure
+		application.Module,
+		platformaws.Module,
 
-		// Adapters
-		fx.Provide(amazonaws.NewS3TemplateStore),
+		// Domain modules (business logic)
+		auth.Module,
+		entry.Module,
+		box.Module,
+		export.Module,
+		event.Module,
+		tracking.Module,
+		prefix.Module,
 
-		// Adapters New v2
-		fx.Provide(storage.NewDynamodbKit),
-		fx.Provide(storage.NewDynamoPrefixConfigRepository),
-		fx.Provide(storage.NewDynamoDBTracking),
-
-		fx.Provide(storage.NewDynamoDBBackend),             // Backend DynamoDB (e Indice Global)
-		fx.Provide(storage.NewParameterStoreBackend),       // Backend SSM Standard
-		fx.Provide(storage.NewParameterStoreSecureBackend), // Backend SSM Secure
-
-		// boxspec
-		spec.Module,
-
-		// gateway manager storages
-		fx.Provide(func(
-			l *zap.Logger,
-			pr domain.PrefixConfigRepository,
-			ddb *storage.DynamoDBBackend,
-			ssm *storage.ParameterStoreBackend,
-			ssmSec *storage.ParameterStoreSecureBackend,
-		) domain.EntryManager {
-			gw := storage.NewStorageGateway(ddb, pr, l)
-			gw.RegisterBackend(ddb)
-			gw.RegisterBackend(ssm)
-			gw.RegisterBackend(ssmSec)
-			return gw
-		}),
-		fx.Decorate(usecases.NewEntryManagerWithTracking),
-
-		// http
-		httpapi.Module,
-
-		// Use case
-		fx.Provide(strategies.NewStrategyResolver),
-		fx.Provide(usecases.NewPathUseCase),
-		// fx.Provide(usecases.NewEntryUseCase),
-		fx.Provide(usecases.NewBox),
-		fx.Provide(usecases.NewExportUseCase),
-
-		// fx.Decorate(usecases.NewEntryUseCaseWithEvents),
-		fx.Provide(usecases.NewEventUseCase),
-
-		// sse
-		fx.Provide(sse.NewEventBroker),
-		fx.Provide(sse.NewInMemoryEventPublisher),
-
-		// config
-		fx.Provide(application.NewConfigFromEnv),
-		fx.Provide(func() *status.Status {
-			version := application.GitHash
-			if version == "" {
-				version = "unknown.dev"
-			}
-			return status.NewStatus(version)
-		}),
-		fx.Provide(func(config *application.Config) domain.UserRepository {
+		// Store wiring — kept here because store sub-packages import their domain
+		// packages, making it impossible to wire them inside the domain module.go files.
+		fx.Provide(func(config *application.Config) auth.Store {
 			credentials := os.Getenv(config.CredentialsLoader.EnvVarKey)
-			repo, err := persistence.NewInMemoryUserRepository([]byte(credentials))
+			repo, err := authstore.NewInMemory([]byte(credentials))
 			if err != nil {
 				log.Fatal(err)
 			}
 			return repo
 		}),
-		fx.Provide(func(config *application.Config, render presenters.Presenters, logger *zap.Logger, repo domain.UserRepository) *auth.Authn {
-			return auth.NewAuthn(config.CredentialsLoader.EnvVarKey, config, render, logger, repo)
+		fx.Provide(boxstore.NewS3),
+		fx.Provide(prefixstore.NewDynamoDB),
+		fx.Provide(trackingstore.NewDynamoDB),
+		fx.Provide(entrystore.NewDynamoDB),
+		fx.Provide(entrystore.NewSSM),
+		fx.Provide(func(base *entrystore.SSM, logger *zap.Logger) *entrystore.SSMSecure {
+			return entrystore.NewSSMSecure(base, logger)
 		}),
+		fx.Provide(func(
+			l *zap.Logger,
+			pr prefix.Store,
+			ddb *entrystore.DynamoDB,
+			ssm *entrystore.SSM,
+			ssmSec *entrystore.SSMSecure,
+		) entry.Manager {
+			gw := entrystore.NewGateway(ddb, pr, l)
+			gw.RegisterBackend(ddb)
+			gw.RegisterBackend(ssm)
+			gw.RegisterBackend(ssmSec)
+			return gw
+		}),
+		// Event bus: wired here because event/bus imports event (cycle).
+		fx.Provide(bus.NewMemory),
+		fx.Provide(func(m *bus.Memory) event.Publisher { return m }),
+
+		// Tracking recorder wraps entry.Manager with audit trail + event dispatch.
+		// Must be at top-level scope so it applies to all consumers (box, export, handlers).
+		fx.Decorate(tracking.NewRecorder),
+
+		// HTTP transport
+		transporthttp.Module,
 	)
 
 	if err := app.Err(); err != nil {
