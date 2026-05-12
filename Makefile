@@ -152,4 +152,4 @@ mod-vendor:
 ## ----------------------------------------
 .PHONY: docs
 docs:
-	$(TOOLS_BIN_DIR)/swag init -g internal/entrypoints/httpapi/api.go --parseDependency
+	$(TOOLS_BIN_DIR)/swag init -g internal/transport/http/server.go --parseDependency

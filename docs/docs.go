@@ -40,7 +40,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_entrypoints_api_auth.TokenRequest"
+                            "$ref": "#/definitions/internal_auth.TokenRequest"
                         }
                     }
                 ],
@@ -90,7 +90,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/nbox_internal_domain_models.Box"
+                                "$ref": "#/definitions/internal_box.Box"
                             }
                         }
                     },
@@ -141,7 +141,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_entrypoints_api_handlers.CommandBox"
+                            "$ref": "#/definitions/internal_box.Command-internal_box_Box"
                         }
                     }
                 ],
@@ -223,7 +223,7 @@ const docTemplate = `{
         },
         "/api/box/{service}/{stage}": {
             "get": {
-                "description": "show metadadata \u0026 template name",
+                "description": "show metadata \u0026 template names",
                 "produces": [
                     "application/json"
                 ],
@@ -251,7 +251,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/nbox_internal_domain_models.Stage"
+                            "$ref": "#/definitions/internal_box.Stage"
                         }
                     },
                     "401": {
@@ -379,7 +379,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_entrypoints_api_handlers.BoxInput"
+                            "$ref": "#/definitions/internal_box.Input"
                         }
                     }
                 ],
@@ -462,7 +462,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "properties": {
-                                "exit": {
+                                "exist": {
                                     "type": "boolean"
                                 }
                             }
@@ -737,7 +737,7 @@ const docTemplate = `{
                             "items": {
                                 "type": "array",
                                 "items": {
-                                    "$ref": "#/definitions/nbox_internal_domain_boxspec.SpecDefinition"
+                                    "$ref": "#/definitions/nbox_internal_box_store_spec.SpecDefinition"
                                 }
                             }
                         }
@@ -785,7 +785,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_entrypoints_api_handlers.ValidateInput"
+                            "$ref": "#/definitions/internal_box.ValidateInput"
                         }
                     }
                 ],
@@ -793,7 +793,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/nbox_internal_domain_boxspec.ValidationResult"
+                            "$ref": "#/definitions/nbox_internal_box_store_spec.ValidationResult"
                         }
                     },
                     "400": {
@@ -827,7 +827,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/nbox_internal_domain_models.Entry"
+                                "$ref": "#/definitions/internal_entry.Entry"
                             }
                         }
                     }
@@ -873,7 +873,7 @@ const docTemplate = `{
         },
         "/api/entry/export": {
             "get": {
-                "description": "Export entries in different formats (JSON, YAML, dotenv, ECS tack definition) for backup or migration purposes\nRequires authentication via Bearer token",
+                "description": "Export entries in different formats (JSON, YAML, dotenv, ECS task definition) for backup or migration purposes\nRequires authentication via Bearer token",
                 "produces": [
                     "application/json",
                     "application/x-yaml",
@@ -990,7 +990,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/nbox_internal_domain_models.Entry"
+                            "$ref": "#/definitions/internal_entry.Entry"
                         }
                     },
                     "401": {
@@ -1101,7 +1101,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
-                                "$ref": "#/definitions/nbox_internal_domain_models.Entry"
+                                "$ref": "#/definitions/internal_entry.Entry"
                             }
                         }
                     },
@@ -1153,7 +1153,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/nbox_internal_domain_models.Entry"
+                                "$ref": "#/definitions/internal_entry.Entry"
                             }
                         }
                     },
@@ -1203,7 +1203,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/nbox_internal_domain_models.Entry"
+                            "$ref": "#/definitions/internal_entry.Entry"
                         }
                     },
                     "401": {
@@ -1251,7 +1251,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/nbox_internal_domain_backend.PrefixConfig"
+                                "$ref": "#/definitions/internal_prefix.Config"
                             }
                         }
                     },
@@ -1332,7 +1332,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/nbox_internal_domain_backend.PrefixConfig"
+                            "$ref": "#/definitions/internal_prefix.Config"
                         }
                     },
                     "401": {
@@ -1475,7 +1475,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/nbox_internal_domain_models.Tracking"
+                                "$ref": "#/definitions/internal_tracking.Record"
                             }
                         }
                     },
@@ -1504,7 +1504,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "internal_entrypoints_api_auth.TokenRequest": {
+        "internal_auth.TokenRequest": {
             "type": "object",
             "properties": {
                 "password": {
@@ -1515,7 +1515,32 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_entrypoints_api_handlers.BoxInput": {
+        "internal_box.Box": {
+            "type": "object",
+            "properties": {
+                "service": {
+                    "type": "string"
+                },
+                "stage": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/internal_box.Stage"
+                    }
+                }
+            }
+        },
+        "internal_box.Command-internal_box_Box": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string"
+                },
+                "payload": {
+                    "$ref": "#/definitions/internal_box.Box"
+                }
+            }
+        },
+        "internal_box.Input": {
             "type": "object",
             "properties": {
                 "content": {
@@ -1523,19 +1548,47 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_entrypoints_api_handlers.CommandBox": {
+        "internal_box.Stage": {
             "type": "object",
             "properties": {
-                "id": {
-                    "type": "string",
-                    "example": "123"
+                "metadata": {
+                    "$ref": "#/definitions/internal_box.TemplateMetadata"
                 },
-                "payload": {
-                    "$ref": "#/definitions/nbox_internal_domain_models.Box"
+                "template": {
+                    "$ref": "#/definitions/internal_box.Template"
                 }
             }
         },
-        "internal_entrypoints_api_handlers.ValidateInput": {
+        "internal_box.Template": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "s3 path",
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_box.TemplateMetadata": {
+            "type": "object",
+            "properties": {
+                "hash": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "updatedBy": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_box.ValidateInput": {
             "type": "object",
             "properties": {
                 "content": {
@@ -1546,7 +1599,47 @@ const docTemplate = `{
                 }
             }
         },
-        "nbox_internal_domain_backend.PrefixConfig": {
+        "internal_entry.Entry": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "example": "development/service/var-example"
+                },
+                "metadata": {
+                    "$ref": "#/definitions/internal_entry.Metadata"
+                },
+                "secure": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "value": {
+                    "type": "string",
+                    "example": "value 123"
+                }
+            }
+        },
+        "internal_entry.Metadata": {
+            "type": "object",
+            "properties": {
+                "fingerprint": {
+                    "type": "string"
+                },
+                "storageBackend": {
+                    "$ref": "#/definitions/nbox_internal_prefix.StorageBackendType"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "updatedBy": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_prefix.Config": {
             "type": "object",
             "properties": {
                 "prefix": {
@@ -1563,18 +1656,18 @@ const docTemplate = `{
                     "description": "TODO: Deprecated",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/nbox_internal_domain_backend.StorageBackendType"
+                        "$ref": "#/definitions/internal_prefix.StorageBackendType"
                     }
                 },
                 "typeDefault": {
-                    "$ref": "#/definitions/nbox_internal_domain_backend.StorageBackendType"
+                    "$ref": "#/definitions/internal_prefix.StorageBackendType"
                 },
                 "typeSecure": {
-                    "$ref": "#/definitions/nbox_internal_domain_backend.StorageBackendType"
+                    "$ref": "#/definitions/internal_prefix.StorageBackendType"
                 }
             }
         },
-        "nbox_internal_domain_backend.StorageBackendType": {
+        "internal_prefix.StorageBackendType": {
             "type": "string",
             "enum": [
                 "dynamodb",
@@ -1587,7 +1680,39 @@ const docTemplate = `{
                 "BackendParameterStoreSecure"
             ]
         },
-        "nbox_internal_domain_boxspec.SpecDefinition": {
+        "internal_tracking.Record": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "hash": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "secure": {
+                    "type": "boolean"
+                },
+                "storageBackend": {
+                    "$ref": "#/definitions/nbox_internal_prefix.StorageBackendType"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "updatedBy": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "nbox_internal_box_store_spec.SpecDefinition": {
             "type": "object",
             "properties": {
                 "id": {
@@ -1611,7 +1736,7 @@ const docTemplate = `{
                 }
             }
         },
-        "nbox_internal_domain_boxspec.ValidationError": {
+        "nbox_internal_box_store_spec.ValidationError": {
             "type": "object",
             "properties": {
                 "message": {
@@ -1623,149 +1748,35 @@ const docTemplate = `{
                 }
             }
         },
-        "nbox_internal_domain_boxspec.ValidationResult": {
+        "nbox_internal_box_store_spec.ValidationResult": {
             "type": "object",
             "properties": {
                 "errors": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/nbox_internal_domain_boxspec.ValidationError"
+                        "$ref": "#/definitions/nbox_internal_box_store_spec.ValidationError"
                     }
                 },
                 "spec": {
-                    "$ref": "#/definitions/nbox_internal_domain_boxspec.SpecDefinition"
+                    "$ref": "#/definitions/nbox_internal_box_store_spec.SpecDefinition"
                 },
                 "valid": {
                     "type": "boolean"
                 }
             }
         },
-        "nbox_internal_domain_models.Box": {
-            "type": "object",
-            "properties": {
-                "service": {
-                    "type": "string"
-                },
-                "stage": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/nbox_internal_domain_models.Stage"
-                    }
-                }
-            }
-        },
-        "nbox_internal_domain_models.Entry": {
-            "type": "object",
-            "properties": {
-                "key": {
-                    "type": "string",
-                    "example": "development/service/var-example"
-                },
-                "metadata": {
-                    "$ref": "#/definitions/nbox_internal_domain_models.Metadata"
-                },
-                "secure": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "value": {
-                    "type": "string",
-                    "example": "value 123"
-                }
-            }
-        },
-        "nbox_internal_domain_models.Metadata": {
-            "type": "object",
-            "properties": {
-                "fingerprint": {
-                    "type": "string"
-                },
-                "storageBackend": {
-                    "$ref": "#/definitions/nbox_internal_domain_backend.StorageBackendType"
-                },
-                "updatedAt": {
-                    "type": "string"
-                },
-                "updatedBy": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
-        },
-        "nbox_internal_domain_models.Stage": {
-            "type": "object",
-            "properties": {
-                "metadata": {
-                    "$ref": "#/definitions/nbox_internal_domain_models.TemplateMetadata"
-                },
-                "template": {
-                    "$ref": "#/definitions/nbox_internal_domain_models.Template"
-                }
-            }
-        },
-        "nbox_internal_domain_models.Template": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "description": "s3 path",
-                    "type": "string"
-                },
-                "value": {
-                    "type": "string"
-                }
-            }
-        },
-        "nbox_internal_domain_models.TemplateMetadata": {
-            "type": "object",
-            "properties": {
-                "hash": {
-                    "type": "string"
-                },
-                "updatedAt": {
-                    "type": "string"
-                },
-                "updatedBy": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "string"
-                }
-            }
-        },
-        "nbox_internal_domain_models.Tracking": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string"
-                },
-                "hash": {
-                    "type": "string"
-                },
-                "key": {
-                    "type": "string"
-                },
-                "secure": {
-                    "type": "boolean"
-                },
-                "storageBackend": {
-                    "$ref": "#/definitions/nbox_internal_domain_backend.StorageBackendType"
-                },
-                "updatedAt": {
-                    "description": ",unixtime",
-                    "type": "string"
-                },
-                "updatedBy": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "integer"
-                }
-            }
+        "nbox_internal_prefix.StorageBackendType": {
+            "type": "string",
+            "enum": [
+                "dynamodb",
+                "parameterstore",
+                "parameterstore_secure"
+            ],
+            "x-enum-varnames": [
+                "BackendDynamoDB",
+                "BackendParameterStore",
+                "BackendParameterStoreSecure"
+            ]
         },
         "problem.ProblemDetail": {
             "type": "object",
@@ -1815,7 +1826,7 @@ const docTemplate = `{
     }
 }`
 
-// SwaggerInfo holds exported Swagger Info so clients can modify it.
+// SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "2.0",
 	Host:             "",

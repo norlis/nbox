@@ -34,7 +34,7 @@ func (h *Handler) Register(api *http.ServeMux) {
 // @Param to query string false "End time. Supports: 30m, 2h, 1.5d, 2w, 1M or ISO-8601"
 // @Security BasicAuth
 // @Security BearerAuth
-// @Success 200 {object} []Tracking ""
+// @Success 200 {object} []Record ""
 // @Failure 401 {object} problem.ProblemDetail "Unauthorized"
 // @Failure 500 {object} problem.ProblemDetail "Internal error"
 // @Router /api/track/key [get].
