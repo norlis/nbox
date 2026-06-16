@@ -5,6 +5,7 @@ NBOX es un servicio backend escrito en Go, diseñado para actuar como una soluci
 ## Tabla de contenidos
 
 - [Características Principales](#características-principales)
+- [Componentes](#componentes)
 - [Guía de Inicio Rápido](#guía-de-inicio-rápido)
   - [Prerrequisitos](#prerrequisitos)
   - [Instalación y Ejecución Local](#instalación-y-ejecución-local)
@@ -20,7 +21,6 @@ NBOX es un servicio backend escrito en Go, diseñado para actuar como una soluci
 - [Project Structure](#project-structure)
 - [Security playground](#security-playground)
 - [Agentes M2M (entrypushd gRPC)](#agentes-m2m-entrypushd-grpc)
-- [stream events (SSE)](#stream-events-sse)
 - [TODO](#todo)
 
 ---
@@ -36,6 +36,24 @@ NBOX es un servicio backend escrito en Go, diseñado para actuar como una soluci
 -   **Seguridad Robusta**:
   -   **Autenticación**: Soporta tanto **HTTP Basic Auth** como **JWT** para proteger los endpoints.
   -   **Autorización**: Utiliza **Open Policy Agent (OPA)** para un control de acceso granular y basado en roles.
+
+---
+
+## Componentes
+
+NBOX se compone de **dos servicios** y una **CLI** de administración:
+
+| Componente | Qué es | Puerto |
+|---|---|---|
+| **`nbox`** | Microservicio HTTP: API REST de entries, templates (box), export, tracking y auth (JWT/Basic + OPA). | `7337` |
+| **`entrypushd`** | Consumer SQS + servidor gRPC (`KVStream/Watch`): empuja cambios a **agentes** en tiempo real, con auth M2M (AppRole / AWS-STS) y entrega **HPKE** para secretos vault. | `9337` |
+| **`nbox-cli`** | Tooling de administración: hashes, credenciales M2M, seed y config dinámica. | — |
+
+**Almacenamiento:** DynamoDB (entries / config / tracking), Parameter Store + KMS (secretos), S3 (templates).
+
+Esta guía cubre principalmente `nbox`. Para `entrypushd` y los agentes ver
+[Agentes M2M (entrypushd gRPC)](#agentes-m2m-entrypushd-grpc); para la CLI ver
+[CLI de administración](#cli-de-administración-nbox-cli).
 
 ---
 
@@ -81,7 +99,24 @@ NBOX es un servicio backend escrito en Go, diseñado para actuar como una soluci
 
 ## Referencia de la API
 
-A continuación se muestran los endpoints principales y ejemplos de uso.
+La referencia **completa e interactiva** de todos los endpoints está en
+**Swagger UI: `GET /swagger/`** (spec en [`docs/`](./docs/README.md), regenerable
+con `make docs`). Abajo se documentan solo los flujos más comunes.
+
+Familias de endpoints (todas bajo `/api`, requieren auth salvo `/auth/token`):
+
+| Familia | Endpoints |
+|---|---|
+| **auth** | `POST /auth/token` |
+| **me** | `GET /me/permissions` |
+| **entry** | `POST /entry`, `GET /entry/key`, `GET /entry/prefix`, `DELETE /entry/key`, `GET /entry/resolve`, `POST /entry/lookup`, `GET /entry/export` |
+| **box** (templates) | `POST\|GET\|HEAD /box/{service}/{stage}/{template}`, `GET /box/{service}/{stage}`, `…/build`, `…/vars`, `GET /box`, `GET /box/schemas` |
+| **boxspec** (CUE) | `GET /boxspec/specs`, `GET /boxspec/resolve`, `POST /boxspec/reload`, `POST /boxspec/validate` |
+| **prefix** | `GET /prefix`, `GET /prefix/backends`, `GET /prefix/resolve` |
+| **track** | `GET /track/key` |
+| **static** | `GET /static/stages` |
+
+A continuación, ejemplos de los flujos más comunes.
 
 ### Autenticación
 
@@ -92,6 +127,15 @@ Genera un token JWT para autenticar las siguientes peticiones.
 curl -X POST -H "Content-Type: application/json" \
   -d '{"username": "user", "password": "pass"}' \
   http://localhost:7337/api/auth/token
+```
+
+#### `GET /api/me/permissions`
+Devuelve los permisos (nombres + patrones de recurso) que OPA concede a los roles
+del caller autenticado. Útil como **hint de UI**; no es un límite de seguridad.
+
+```shell
+curl -X GET "http://localhost:7337/api/me/permissions" \
+    -H "Authorization: Bearer ${TOKEN}" | jq
 ```
 
 ### Gestión de Variables (Entries)
@@ -127,103 +171,54 @@ curl -X GET "http://localhost:7337/api/entry/key?v=global/example/email_user" \
     --user "user:pass" | jq
 ```
 
-#### `GET /api/entry/secret-value?v=<full-key-path>`
-Obtiene el valor de un secreto específico.
+#### `GET /api/entry/resolve?v=<full-key-path>`
+Resuelve el valor de un secreto específico (lo descifra desde Parameter Store).
 
 ```shell
-curl -X GET "http://localhost:7337/api/entry/secret-value?v=global/example/email_password" \
+curl -X GET "http://localhost:7337/api/entry/resolve?v=global/example/email_password" \
     --user "user:pass" | jq
 ```
 
+> `GET /api/entry/secret-value` está **deprecado** — usá `/api/entry/resolve`.
+
 ### Gestión de Plantillas (Templates)
 
-#### `POST /api/box`
-Crea o actualiza una plantilla para un servicio en uno o más entornos. El valor de la plantilla debe estar codificado en Base64.
+Las plantillas pueden ser **JSON, YAML o texto plano** — se guardan en S3 en Base64.
+Dentro del contenido:
+- `{{ key/path }}` → se sustituye por el valor de la variable/secreto al hacer `build`.
+- `:var` → placeholder reemplazado por query params en `build` (ej. `?var=valor`).
+
+**Validación con CUE:** opcionalmente las plantillas se validan contra esquemas
+[CUE](https://cuelang.org/) (archivos `.cue` en `specs/`). Los endpoints `boxspec`
+gestionan esos esquemas: `GET /api/boxspec/specs` (lista), `GET /api/boxspec/resolve`
+(esquema aplicable), `POST /api/boxspec/validate` (valida un template contra su
+esquema) y `POST /api/boxspec/reload` (recarga desde disco). `GET /api/box/schemas`
+lista los tipos de esquema disponibles.
+
+#### `POST /api/box/{service}/{stage}/{template}`
+Crea o actualiza una plantilla. `service`/`stage`/`template` van en la **ruta**; el body lleva el contenido en **Base64**. Dentro del template, `{{key}}` referencia variables/secretos y `:var` son placeholders sustituidos al hacer `build`.
 
 ```shell
-# task-definition.json (contenido de ejemplo)
-# TEMPLATE_B64=$(cat task-definition.json | base64)
-
-TEMPLATE_B64=$(cat <<EOF | base64 
+TEMPLATE=$(cat <<'EOF' | base64
 {
-  "requiresCompatibilities": [
-    "EC2"
-  ],
-  "containerDefinitions": [
-    {
-      "name": "nginx",
-      "image": ":image-name",
-      "memory": 256,
-      "cpu": 256,
-      "essential": true,
-      "portMappings": [
-        {
-          "containerPort": 80,
-          "protocol": "tcp"
-        }
-      ],
-      "secrets": [
-        {
-          "name": "EMAIL_PASSWORD",
-          "valueFrom": "{{global/example/email_password}}"
-        }
-      ],
-      "environment": [
-        {
-          "name": "ENVIRONMENT_NAME",
-          "value": ":stage"
-        },
-        {
-          "name": "EMAIL_USER",
-          "value": "{{ global/example/email_user }}"
-        }
-      ],
-      "logConfiguration": {
-        "logDriver": "awslogs",
-        "options": {
-          "awslogs-group": "/ecs/nginx_:stage",
-          "awslogs-region": "us-east-1",
-          "awslogs-stream-prefix": "nginx"
-        }
-      },
-      "healthCheck": {
-        "command": [
-          "CMD-SHELL",
-          "wget --no-verbose --tries=1 -O /dev/null --quiet http://localhost || exit 1"
-        ],
-        "interval": 30,
-        "timeout": 10,
-        "retries": 3,
-        "startPeriod": 10
-      }
-    }
-  ],
-  "volumes": [],
-  "placementConstraints": [],
+  "containerDefinitions": [{
+    "name": "nginx",
+    "image": ":image-name",
+    "secrets": [{ "name": "EMAIL_PASSWORD", "valueFrom": "{{global/example/email_password}}" }],
+    "environment": [{ "name": "EMAIL_USER", "value": "{{ global/example/email_user }}" }]
+  }],
   "family": "nginx"
 }
 EOF
 )
-  
-PAYLOAD=$(<<EOF 
-{
-  "payload": {
-    "service": "example",
-    "stage": {
-      "development": {
-        "template": { "name": "task_definition.json", "value": "${TEMPLATE_B64}" }
-      }
-    }
-  }
-}
-EOF
-)
 
-curl -X POST "http://localhost:7337/api/box" \
+curl -X POST "http://localhost:7337/api/box/example/development/task-definition.json" \
     -H "Content-Type: application/json" \
-    -d "${PAYLOAD}" \
+    -d "{\"content\": \"${TEMPLATE}\"}" \
     --user "user:pass" | jq
 ```
+
+> `POST /api/box` (con payload anidado `{"payload":{"service","stage":{...}}}`) está **deprecado** — usá la forma con la ruta `{service}/{stage}/{template}`.
 
 
 #### `GET /api/box/{service}/{stage}/{template}`
@@ -327,49 +322,15 @@ Orientado a flags/argumentos: `hasher`, `approle generate/rotate-secret`, `seed`
   - `make test`: Ejecuta las pruebas unitarias
   - `make tools`: Instala las herramientas de desarrollo
 
-#### Generación de Documentación OpenAPI (Swagger)
+#### Documentación OpenAPI (Swagger)
 
 ```shell
 make docs
 ```
 
-**(Open API)[https://github.com/swaggo/swag?tab=readme-ov-file#the-swag-formatter]**
-```go
-// UpsertBox
-// @Summary Upsert templates
-// @Description insert or update templates on s3
-// @Tags templates
-// @Accept json
-// @Produce json
-// @Param data body models.Box true "Upsert template"
-// @Success 200 {object} []string ""
-// @Failure 400 {object} problem.ProblemDetail "Bad Request"
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 403 {object} problem.ProblemDetail "Forbidden"
-// @Failure 404 {object} problem.ProblemDetail "Not Found"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/box [post]
-```
-
-Descripción de las anotaciones
-1.	**@Summary y @Description**
-      •	@Summary: Describe brevemente lo que hace el endpoint.
-      •	@Description: Proporciona una explicación más detallada.
-2.	**@Tags**
-      •	Úsalo para categorizar endpoints, por ejemplo, “usuarios”, “productos”, etc.
-3.	**@Accept y @Produce**
-      •	@Accept: Especifica el tipo de contenido esperado (en este caso, JSON).
-      •	@Produce: Especifica el tipo de contenido que el endpoint devolverá (en este caso, JSON).
-4.	**@Param**
-      •	Define los parámetros de la solicitud.
-      •	body: Indica que el parámetro está en el cuerpo.
-      •	CreateRequest: Estructura esperada.
-      •	true: Especifica si es obligatorio.
-5.	**@Success y @Failure**
-      •	@Success: Describe una respuesta exitosa.
-      •	@Failure: Describe posibles respuestas de error.
-6.	**@Router**
-      •	Especifica la ruta y el método HTTP (en este caso, POST).
+Genera la spec desde las anotaciones de los handlers. El formato de anotaciones,
+los archivos generados y el endpoint `GET /swagger/` están documentados en
+[`docs/README.md`](./docs/README.md).
 
 
 ## CLI de administración (`nbox-cli`)
@@ -435,117 +396,51 @@ docker buildx build --platform=linux/amd64 --target production -t nbox:1  --prog
 
 ## Arquitectura
 
+Vista de **componentes en runtime** (los dos binarios, el flujo de eventos y los backends).
+La organización del código está en [Project Structure](#project-structure).
+
 ```mermaid
 ---
 config:
   layout: dagre
   theme: base
 ---
-flowchart TD
-    %% External Services
-    subgraph EXT["☁️ Servicios AWS"]
-        S3[("S3<br/>Templates")]
-        DDB[("DynamoDB<br/>Entries/Tracking")]
-        SSM[("SSM<br/>Secrets")]
+flowchart LR
+    HUMAN["👤 Humano / CI<br/>HTTP · JWT/Basic"]
+    AGENT["🤖 Agente / servicio<br/>gRPC · M2M"]
+    ADMIN["🔧 nbox-cli"]
+
+    subgraph NBOX["nbox · HTTP :7337"]
+        AUTH["Auth<br/>JWT/Basic + OPA"]
+        DOM["Dominios<br/>entry · box · export<br/>tracking · prefix"]
     end
 
-    %% Clients
-    subgraph CLI["🔧 Herramientas"]
-        HASHER["Hasher CLI<br/>Password Gen"]
-        CLIENT["HTTP Client<br/>API Consumer"]
+    subgraph EPS["entrypushd · :9337"]
+        SQSC["SQS consumer"]
+        GRPC["gRPC KVStream/Watch<br/>M2M (AppRole / AWS-STS)<br/>HPKE para vault"]
     end
 
-    %% Presentation Layer
-    subgraph PRES["🌐 Capa de Presentación"]
-        WEBUI["Web UI<br/>Events/Assets"]
-        AUTH["Auth Layer<br/>JWT/Basic/OPA"]
-        API["REST API<br/>Box/Entry/Static"]
-        SSE["SSE Events<br/>Real-time"]
+    subgraph AWS["☁️ AWS"]
+        DDB[("DynamoDB<br/>entries · config · tracking")]
+        SSM[("Parameter Store + KMS<br/>secretos")]
+        S3[("S3<br/>templates")]
+        BUS(("SNS → SQS"))
     end
 
-    %% Application Layer
-    subgraph APP["⚙️ Capa de Aplicación"]
-        BOXUC["BoxUseCase<br/>Template Builder"]
-        ENTRYUC["EntryUseCase<br/>Config Manager"]
-        PATHUC["PathUseCase<br/>Key Utils"]
-        EVENTUC["EventUseCase<br/>Notifications"]
-    end
+    HUMAN --> AUTH --> DOM
+    ADMIN -. escribe .-> DDB
+    DOM --> DDB & SSM & S3
+    DOM -- cambios --> BUS --> SQSC --> GRPC
+    AGENT --> GRPC
+    GRPC -. snapshot HTTP .-> DOM
+    DDB -. config dinámica .-> AUTH & GRPC
 
-    %% Domain Layer
-    subgraph DOM["🏛️ Capa de Dominio"]
-        MODELS["Domain Models<br/>Entry | Box | User<br/>Template | Event"]
-        PORTS["Interfaces<br/>EntryAdapter<br/>TemplateAdapter<br/>SecretAdapter"]
-    end
-
-    %% Infrastructure Layer
-    subgraph INFRA["🔌 Adaptadores"]
-        S3ADAPTER["S3 Template Store<br/>JSON Templates"]
-        DDBADAPTER["DynamoDB Backend<br/>Entries/Tracking"]
-        SSMADAPTER["SSM SecureStore<br/>Encrypted Secrets"]
-        MEMORY["InMemory UserRepo<br/>Auth Credentials"]
-        SSEADAPTER["SSE Broker<br/>Event Publisher"]
-    end
-
-    %% Health & Monitoring
-    subgraph HEALTH["📊 Observabilidad"]
-        STATUS["Health Checks<br/>Ready/Live"]
-        LOGS["Structured Logs<br/>Zap Logger"]
-    end
-
-    %% Connections - External
-    CLIENT --> AUTH
-    WEBUI --> SSE
-    
-    %% Connections - Flow
-    AUTH --> API
-    API --> BOXUC
-    API --> ENTRYUC
-    API --> EVENTUC
-    
-    BOXUC --> PATHUC
-    ENTRYUC --> EVENTUC
-    
-    %% Use Cases to Ports
-    BOXUC --> PORTS
-    ENTRYUC --> PORTS
-    EVENTUC --> PORTS
-    
-    %% Ports to Models
-    PORTS --> MODELS
-    
-    %% Adapters to Ports
-    S3ADAPTER -.-> PORTS
-    DDBADAPTER -.-> PORTS
-    SSMADAPTER -.-> PORTS
-    MEMORY -.-> PORTS
-    SSEADAPTER -.-> PORTS
-    
-    %% Infrastructure to External
-    S3ADAPTER --> S3
-    DDBADAPTER --> DDB
-    SSMADAPTER --> SSM
-    
-    %% Health Connections
-    STATUS --> S3ADAPTER
-    STATUS --> DDBADAPTER
-    STATUS --> SSMADAPTER
-
-    %% Styling
-    classDef external fill:#232F3E,stroke:#FF9900,stroke-width:3px,color:#fff
-    classDef cli fill:#2D3748,stroke:#4FD1C7,stroke-width:2px,color:#fff
-    classDef presentation fill:#E3F2FD,stroke:#1976D2,stroke-width:2px,color:#000
-    classDef application fill:#E8F5E8,stroke:#4CAF50,stroke-width:2px,color:#000
-    classDef domain fill:#FFF3E0,stroke:#FF9800,stroke-width:3px,color:#000
-    classDef infrastructure fill:#F3E5F5,stroke:#9C27B0,stroke-width:2px,color:#000
-    classDef health fill:#FFF5F5,stroke:#E53E3E,stroke-width:2px,color:#000
-
-    class S3,DDB,SSM external
-    class HASHER,CLIENT cli
-    class WEBUI,AUTH,API,SSE presentation
-    class BOXUC,ENTRYUC,PATHUC,EVENTUC application
-    class MODELS,PORTS domain
-    class S3ADAPTER,DDBADAPTER,SSMADAPTER,MEMORY,SSEADAPTER infrastructure
-    class STATUS,LOGS health
+    classDef client fill:#E8F5E8,stroke:#4CAF50,color:#000
+    classDef svc fill:#E3F2FD,stroke:#1976D2,color:#000
+    classDef aws fill:#232F3E,stroke:#FF9900,color:#fff
+    class HUMAN,AGENT,ADMIN client
+    class AUTH,DOM,SQSC,GRPC svc
+    class DDB,SSM,S3,BUS aws
 ```
 
 ## Project Structure
@@ -555,31 +450,36 @@ NBOX is organized using **Package-Oriented Design** combined with **Clean Archit
 ```
 cmd/
   nbox/          → HTTP API binary (fx wiring only)
-  entrypushd/    → gRPC push daemon (fx wiring only)
-  cli/           → CLI client
-  hasher/        → bcrypt password utility
+  entrypushd/    → SQS consumer + gRPC daemon (fx wiring only)
+  cli/           → admin CLI (hasher, approle, seed, config)
 
 internal/
-  entry/         → Entry domain: model, store interface, service, HTTP handler
+  entry/         → Entry domain: model, stores (DynamoDB/SSM), service, HTTP handler
   box/           → Box/template domain: model, S3 store, CUE spec, handler
-  export/        → Export domain: formats (dotenv, JSON, YAML, ECS task def)
+  export/        → Export domain: formats (dotenv, JSON)
   tracking/      → Change history: model, DynamoDB store, handler
-  prefix/        → Prefix configuration: model, DynamoDB store, handler
-  event/         → Internal event bus: publisher interface, SSE broker, NATS/SNS adapters
-  auth/          → Authentication: User/Identity models, OPA enforcement, in-memory store
-  vault/         → Vault/passbox domain: secure entry rules, agent pubkey registry
-  entrypushd/    → gRPC daemon internals: auth, streaming, envelope encryption, registry
+  prefix/        → Prefix/stage configuration: model, DynamoDB store, handler
+  me/            → Identity/permissions endpoint (/api/me)
+  event/         → Event model + SNS publisher
+  auth/          → Auth: User/Identity, JWT, OPA, in-memory store; M2M (approle, awssts)
+  config/        → Dynamic config: env→DynamoDB resolution chain, snapshot cache, CLI admin store
+  entrypushd/    → entrypushd internals:
+                     grpc/       → gRPC server + auth interceptor
+                     handler/    → event broadcast
+                     nboxclient/ → snapshot HTTP client
+                     vault/      → HPKE sealing for passbox/*
   transport/
-    http/        → Router setup, global middleware (JWT, Basic Auth) — no endpoint logic
-    grpc/        → gRPC server setup, auth interceptor
-  application/   → Config (env vars) + build metadata (Port, Address, GitHash)
+    http/        → Router + global middleware (JWT/Basic, CSRF) — no endpoint logic
+    httpx/       → HTTP render/presenter helpers
+  nbox/          → nbox-binary config (env vars)
+  application/   → shared app context + build metadata
+  platform/aws/  → AWS SDK config; DynamoDB/SSM/S3/SQS/SNS clients; health checkers
 
-platform/        → Generic infrastructure with no business logic
-  aws/           → AWS SDK config, DynamoDB/SSM/S3 clients, health checkers
-
-pkg/             → Shared utilities (logger, env loader, circuit breaker)
+pkg/             → Shared utilities (logger, env loader, resiliency)
 policies/        → OPA Rego authorization policies + tests
 specs/           → CUE schema files for template validation
+deployments/     → SAM template (DynamoDB tables, ConfigTable, S3 bucket)
+examples/        → gRPC client examples (Python / Go / shell)
 ```
 
 ### Key conventions
@@ -643,10 +543,6 @@ persiste. Sin pubkey presentada, los valores vault llegan enmascarados (`*****`)
 
 Ejemplos de cliente (Python, Go, Node.js, grpcurl):
 [`examples/grpc-client/`](./examples/grpc-client/).
-
-## stream events (SSE)
-
-Eventos para clientes browser/HTMX (nbox HTTP). https://htmx.org/extensions/sse
 
 ## TODO
 - [ ] Editar los roles desde una UI
