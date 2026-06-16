@@ -131,6 +131,59 @@ func (b *S3) RetrieveBox(ctx context.Context, service, stage, template string) (
 	return body, nil
 }
 
+func (b *S3) RetrieveBoxVersion(ctx context.Context, service, stage, template, versionId string) ([]byte, error) {
+	s3path := path.Join(service, stage, template)
+	input := &s3.GetObjectInput{
+		Bucket:    awssdk.String(b.config.BucketName),
+		Key:       awssdk.String(s3path),
+		VersionId: awssdk.String(versionId),
+	}
+	object, err := b.s3.GetObject(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get object version from S3: %w", err)
+	}
+	defer func(Body io.ReadCloser) { _ = Body.Close() }(object.Body)
+
+	body, err := io.ReadAll(object.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read S3 object body: %w", err)
+	}
+	return body, nil
+}
+
+func (b *S3) ListVersions(ctx context.Context, service, stage, template string) ([]box.TemplateVersion, error) {
+	s3path := path.Join(service, stage, template)
+	resp, err := b.s3.ListObjectVersions(ctx, &s3.ListObjectVersionsInput{
+		Bucket: awssdk.String(b.config.BucketName),
+		Prefix: awssdk.String(s3path),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list S3 object versions: %w", err)
+	}
+
+	versions := make([]box.TemplateVersion, 0, len(resp.Versions))
+	for _, v := range resp.Versions {
+		if awssdk.ToString(v.Key) != s3path {
+			continue
+		}
+		size := int64(0)
+		if v.Size != nil {
+			size = *v.Size
+		}
+		lastModified := time.Time{}
+		if v.LastModified != nil {
+			lastModified = *v.LastModified
+		}
+		versions = append(versions, box.TemplateVersion{
+			VersionId:    awssdk.ToString(v.VersionId),
+			LastModified: lastModified,
+			Size:         size,
+			IsLatest:     awssdk.ToBool(v.IsLatest),
+		})
+	}
+	return versions, nil
+}
+
 func (b *S3) UpsertBox(ctx context.Context, bx *box.Box) map[string]spec.Result {
 	result := make(map[string]spec.Result)
 

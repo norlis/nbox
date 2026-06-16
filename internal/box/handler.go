@@ -55,6 +55,7 @@ func (h *Handler) Register(api *http.ServeMux) {
 	api.HandleFunc("GET /api/box/{service}/{stage}", h.Stage)
 	api.HandleFunc("GET /api/box/{service}/{stage}/{template}/build", h.Build)
 	api.HandleFunc("GET /api/box/{service}/{stage}/{template}/vars", h.ListVars)
+	api.HandleFunc("GET /api/box/{service}/{stage}/{template}/versions", h.ListVersions)
 	api.HandleFunc("GET /api/box/schemas", h.ListSchemaTypes)
 
 	// boxspec routes
@@ -196,7 +197,16 @@ func (h *Handler) Retrieve(w http.ResponseWriter, r *http.Request) {
 	stage := r.PathValue("stage")
 	template := r.PathValue("template")
 
-	data, err := h.store.RetrieveBox(ctx, service, stage, template)
+	var (
+		data []byte
+		err  error
+	)
+
+	if versionId := r.URL.Query().Get("version"); versionId != "" {
+		data, err = h.store.RetrieveBoxVersion(ctx, service, stage, template, versionId)
+	} else {
+		data, err = h.store.RetrieveBox(ctx, service, stage, template)
+	}
 	if err != nil {
 		h.render.Error(w, r, err, presenters.WithStatus(http.StatusNotFound))
 		return
@@ -204,6 +214,35 @@ func (h *Handler) Retrieve(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write(data)
+}
+
+// ListVersions
+// @Summary List template versions
+// @Description List all S3 versions of a template
+// @Tags templates
+// @Produce json
+// @Param service path string true "service name"
+// @Param stage path string true "stage"
+// @Param template path string true "template name"
+// @Security BasicAuth
+// @Security BearerAuth
+// @Success 200 {array} TemplateVersion ""
+// @Failure 404 {object} problem.ProblemDetail "Not Found"
+// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Router /api/box/{service}/{stage}/{template}/versions [get].
+func (h *Handler) ListVersions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	service := r.PathValue("service")
+	stage := r.PathValue("stage")
+	template := r.PathValue("template")
+
+	versions, err := h.store.ListVersions(ctx, service, stage, template)
+	if err != nil {
+		h.render.Error(w, r, err, presenters.WithStatus(http.StatusInternalServerError))
+		return
+	}
+
+	h.render.JSON(w, r, versions)
 }
 
 // Build

@@ -32,6 +32,13 @@ type TemplateMetadata struct {
 	UpdatedBy string    `dynamodbav:"UpdatedBy,omitempty"   json:"updatedBy,omitempty"`
 }
 
+type TemplateVersion struct {
+	VersionId    string    `json:"versionId"`
+	LastModified time.Time `json:"lastModified"`
+	Size         int64     `json:"size"`
+	IsLatest     bool      `json:"isLatest"`
+}
+
 type CommandName string
 
 var (
@@ -106,6 +113,8 @@ type Store interface {
 	UpsertBox(ctx context.Context, box *Box) map[string]spec.Result
 	BoxExists(ctx context.Context, service, stage, template string) (bool, error)
 	RetrieveBox(ctx context.Context, service, stage, template string) ([]byte, error)
+	RetrieveBoxVersion(ctx context.Context, service, stage, template, versionId string) ([]byte, error)
+	ListVersions(ctx context.Context, service, stage, template string) ([]TemplateVersion, error)
 	List(ctx context.Context) ([]Box, error)
 	Detail(ctx context.Context, service, stage string) (*Stage, error)
 }
