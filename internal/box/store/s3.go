@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -19,13 +18,14 @@ import (
 	"nbox/internal/application"
 	"nbox/internal/box"
 	"nbox/internal/box/store/spec"
+	"nbox/internal/nbox"
 )
 
 // S3 implementa box.Store guardando templates en S3 y metadata en DynamoDB.
 type S3 struct {
 	s3             *s3.Client
 	dynamodbClient *dynamodb.Client
-	config         *application.Config
+	config         *nbox.Config
 	logger         *zap.Logger
 	resolver       *box.StrategyResolver
 	registry       *spec.SpecRegistry
@@ -40,7 +40,7 @@ type boxRecord struct {
 
 func NewS3(
 	s3Client *s3.Client,
-	config *application.Config,
+	config *nbox.Config,
 	dynamodbClient *dynamodb.Client,
 	logger *zap.Logger,
 	resolver *box.StrategyResolver,
@@ -86,8 +86,8 @@ func (b *S3) store(ctx context.Context, objectPath string, stage box.Stage) (*s3
 	}
 
 	s3Result, err := b.s3.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: awssdk.String(b.config.BucketName),
-		Key:    awssdk.String(objectPath),
+		Bucket: new(b.config.BucketName),
+		Key:    new(objectPath),
 		Body:   bytes.NewReader(content),
 	})
 	if err != nil {
@@ -100,8 +100,8 @@ func (b *S3) BoxExists(ctx context.Context, service, stage, template string) (bo
 	s3path := path.Join(service, stage, template)
 
 	_, err := b.s3.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: awssdk.String(b.config.BucketName),
-		Key:    awssdk.String(s3path),
+		Bucket: new(b.config.BucketName),
+		Key:    new(s3path),
 	})
 	if err != nil {
 		return false, fmt.Errorf("failed to check S3 object existence: %w", err)
@@ -112,8 +112,8 @@ func (b *S3) BoxExists(ctx context.Context, service, stage, template string) (bo
 func (b *S3) RetrieveBox(ctx context.Context, service, stage, template string) ([]byte, error) {
 	s3path := path.Join(service, stage, template)
 	object, err := b.s3.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: awssdk.String(b.config.BucketName),
-		Key:    awssdk.String(s3path),
+		Bucket: new(b.config.BucketName),
+		Key:    new(s3path),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get object from S3: %w", err)
@@ -159,12 +159,7 @@ func (b *S3) UpsertBox(ctx context.Context, bx *box.Box) map[string]spec.Result 
 			versionId = *s3Result.VersionId
 		}
 
-		UpdatedBy := "ghost"
-		user, ok := application.UserFromContext(ctx)
-
-		if ok {
-			UpdatedBy = user.Name
-		}
+		UpdatedBy := application.ActorFromContext(ctx)
 
 		item, _ = attributevalue.MarshalMap(boxRecord{
 			Service: bx.Service,
@@ -181,7 +176,7 @@ func (b *S3) UpsertBox(ctx context.Context, bx *box.Box) map[string]spec.Result 
 			},
 		})
 		_, err = b.dynamodbClient.PutItem(ctx, &dynamodb.PutItemInput{
-			TableName: awssdk.String(b.config.BoxTableName), Item: item,
+			TableName: new(b.config.BoxTableName), Item: item,
 		})
 		if err != nil {
 			b.logger.Warn("ErrDbStoreTemplate", zap.String("path", s3path), zap.Error(err))
@@ -195,7 +190,7 @@ func (b *S3) List(ctx context.Context) ([]box.Box, error) {
 	results := make([]box.Box, 0)
 
 	scan, err := b.dynamodbClient.Scan(ctx, &dynamodb.ScanInput{
-		TableName:              awssdk.String(b.config.BoxTableName),
+		TableName:              new(b.config.BoxTableName),
 		ReturnConsumedCapacity: types.ReturnConsumedCapacityTotal,
 	})
 	if err != nil {
@@ -229,8 +224,8 @@ func (b *S3) Detail(ctx context.Context, service, stage string) (*box.Stage, err
 
 	resp, err := b.dynamodbClient.GetItem(ctx, &dynamodb.GetItemInput{
 		Key:            map[string]types.AttributeValue{"Service": p, "Stage": k},
-		TableName:      awssdk.String(b.config.BoxTableName),
-		ConsistentRead: awssdk.Bool(true),
+		TableName:      new(b.config.BoxTableName),
+		ConsistentRead: new(true),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get item from DynamoDB: %w", err)

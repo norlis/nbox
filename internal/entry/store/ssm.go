@@ -2,17 +2,19 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
-	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	eventdrivenaws "github.com/norlis/event-driven/pkg/transport/aws"
 	"go.uber.org/zap"
 	"nbox/internal/application"
 	"nbox/internal/entry"
+	"nbox/internal/nbox"
 	"nbox/internal/prefix"
 	"nbox/pkg/resiliency"
 )
@@ -29,7 +31,8 @@ type SSM struct {
 	client      *ssm.Client
 	pathUseCase *entry.Processor
 	logger      *zap.Logger
-	config      *application.Config
+	config      *nbox.Config
+	identity    *eventdrivenaws.Identity
 	guard       *resiliency.Guard
 }
 
@@ -37,7 +40,8 @@ func NewSSM(
 	client *ssm.Client,
 	pathUseCase *entry.Processor,
 	logger *zap.Logger,
-	config *application.Config,
+	config *nbox.Config,
+	identity *eventdrivenaws.Identity,
 ) *SSM {
 	guard := resiliency.NewGuard(resiliency.GuardConfig{
 		MaxConcurrency: MaxSSMConcurrency,
@@ -50,6 +54,7 @@ func NewSSM(
 		pathUseCase: pathUseCase,
 		logger:      logger,
 		config:      config,
+		identity:    identity,
 		guard:       guard,
 	}
 }
@@ -123,11 +128,12 @@ func (p *SSM) Retrieve(ctx context.Context, key string, opts ...entry.RetrieveOp
 	}
 
 	result, err := p.client.GetParameter(ctx, &ssm.GetParameterInput{
-		Name:           awssdk.String(key),
-		WithDecryption: awssdk.Bool(cfg.Decrypt),
+		Name:           new(key),
+		WithDecryption: new(cfg.Decrypt),
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "ParameterNotFound") {
+		var notFound *types.ParameterNotFound
+		if errors.As(err, &notFound) {
 			return nil, fmt.Errorf("%w: %s", entry.ErrEntryNotFound, key)
 		}
 		return nil, fmt.Errorf("failed to get parameter from SSM: %w", err)
@@ -145,13 +151,14 @@ func (p *SSM) Delete(ctx context.Context, key string) error {
 
 	err := p.guard.Execute(ctx, func() error {
 		_, err := p.client.DeleteParameter(ctx, &ssm.DeleteParameterInput{
-			Name: awssdk.String(key),
+			Name: new(key),
 		})
 		return err
 	})
 	if err != nil {
 		// ParameterNotFound is not an error for Delete (idempotent)
-		if strings.Contains(err.Error(), "ParameterNotFound") {
+		var notFound *types.ParameterNotFound
+		if errors.As(err, &notFound) {
 			return nil
 		}
 		return fmt.Errorf("failed to delete parameter: %w", err)
@@ -202,10 +209,12 @@ func (p *SSM) getArn(rawKey string) string {
 
 	cleanName := strings.TrimPrefix(normalizedKey, "/")
 
+	region, _ := p.identity.Region()
+	accountID, _ := p.identity.AccountID(context.Background())
 	return fmt.Sprintf(
 		"arn:aws:ssm:%s:%s:parameter/%s",
-		p.config.RegionName,
-		p.config.AccountId,
+		region,
+		accountID,
 		cleanName,
 	)
 }
@@ -225,15 +234,15 @@ func (p *SSM) prepare(_ context.Context, en entry.Entry, parameterStoreKeyId str
 	}
 
 	parameterInput := &ssm.PutParameterInput{
-		Name:      awssdk.String(key),
-		Value:     awssdk.String(en.Value),
+		Name:      new(key),
+		Value:     new(en.Value),
 		Type:      parameterType,
 		Tier:      parameterTier,
-		Overwrite: awssdk.Bool(true),
+		Overwrite: new(true),
 	}
 
 	if en.Secure && parameterStoreKeyId != "" {
-		parameterInput.KeyId = awssdk.String(parameterStoreKeyId)
+		parameterInput.KeyId = new(parameterStoreKeyId)
 	}
 
 	return parameterInput
@@ -242,17 +251,14 @@ func (p *SSM) prepare(_ context.Context, en entry.Entry, parameterStoreKeyId str
 // addTags adds tags to a parameter after creation.
 // AWS doesn't allow Tags + Overwrite together in PutParameter.
 func (p *SSM) addTags(ctx context.Context, key *string, _ entry.Entry) {
-	updatedBy := "ghost"
-	if user, ok := application.UserFromContext(ctx); ok {
-		updatedBy = user.Name
-	}
+	updatedBy := application.ActorFromContext(ctx)
 
 	_, err := p.client.AddTagsToResource(ctx, &ssm.AddTagsToResourceInput{
 		ResourceId:   key,
 		ResourceType: types.ResourceTypeForTaggingParameter,
 		Tags: []types.Tag{
-			{Key: awssdk.String("project"), Value: awssdk.String("nbox")},
-			{Key: awssdk.String("username"), Value: awssdk.String(updatedBy)},
+			{Key: new("project"), Value: new("nbox")},
+			{Key: new("username"), Value: new(updatedBy)},
 		},
 	})
 	if err != nil {

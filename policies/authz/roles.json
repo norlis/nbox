@@ -57,6 +57,11 @@
       ]
     },
 
+    "entrypushd": {
+      "description": "Service account for entrypushd binary (snapshot delivery + HPKE vault delivery)",
+      "permissions": ["entries:read:prefix", "secrets:read:value:vault"]
+    },
+
     "admin": {
       "description": "Full system access",
       "permissions": ["admin:full_access"]

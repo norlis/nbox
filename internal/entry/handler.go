@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
-	_ "github.com/norlis/httpgate/pkg/kit/problem"
+	"github.com/norlis/httpgate/presenter"
+	_ "github.com/norlis/httpgate/problem"
+	"nbox/internal/transport/httpx"
 )
 
 type Handler struct {
 	store  Manager
-	render presenters.Presenters
+	render *httpx.Render
 }
 
-func NewHandler(store Manager, render presenters.Presenters) *Handler {
+func NewHandler(store Manager, render *httpx.Render) *Handler {
 	return &Handler{store: store, render: render}
 }
 
@@ -39,16 +40,16 @@ func (h *Handler) Register(api *http.ServeMux) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} map[string]string ""
-// @Failure 400 {object} problem.ProblemDetail "Bad Request"
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 400 {object} problem.Detail "Bad Request"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/entry [post].
 func (h *Handler) Upsert(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var entries []Entry
 
 	if err := json.NewDecoder(r.Body).Decode(&entries); err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
@@ -64,17 +65,25 @@ func (h *Handler) Upsert(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} []Entry ""
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/entry/prefix [get].
 func (h *Handler) ListByPrefix(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	prefix := r.URL.Query().Get("v")
 
-	entries, err := h.store.List(ctx, prefix)
+	var opts []ListOption
+	if r.URL.Query().Has("leaves") {
+		opts = append(opts, LeavesOnly())
+	}
+
+	entries, err := h.store.List(ctx, prefix, opts...)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusBadRequest))
 		return
+	}
+	if entries == nil {
+		entries = []Entry{} // serialize [] not null
 	}
 
 	h.render.JSON(w, r, entries)
@@ -89,15 +98,15 @@ func (h *Handler) ListByPrefix(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} Entry ""
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/entry/key [get].
 func (h *Handler) GetByKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	key := r.URL.Query().Get("v")
 	e, err := h.store.Retrieve(ctx, key)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
@@ -113,15 +122,15 @@ func (h *Handler) GetByKey(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} object{message=string} ""
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/entry/key [delete].
 func (h *Handler) DeleteKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	key := r.URL.Query().Get("v")
 	err := h.store.Delete(ctx, key)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
@@ -137,27 +146,27 @@ func (h *Handler) DeleteKey(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} Entry ""
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 404 {object} problem.ProblemDetail "Not found"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 404 {object} problem.Detail "Not found"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/entry/resolve [get].
 func (h *Handler) Resolve(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	key := r.URL.Query().Get("v")
 
 	if key == "" {
-		h.render.Error(w, r, errors.New("empty key"), presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, errors.New("empty key"), presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
 	e, err := h.store.Resolve(ctx, key)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
 	if e == nil {
-		h.render.Error(w, r, errors.New("not found key"), presenters.WithStatus(http.StatusNotFound))
+		h.render.Error(w, r, errors.New("not found key"), presenter.WithStatus(http.StatusNotFound))
 		return
 	}
 
@@ -174,14 +183,14 @@ func (h *Handler) Resolve(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} map[string]Entry
-// @Failure 400 {object} problem.ProblemDetail "Invalid request body"
-// @Failure 500 {object} problem.ProblemDetail "Internal server error"
+// @Failure 400 {object} problem.Detail "Invalid request body"
+// @Failure 500 {object} problem.Detail "Internal server error"
 // @Router /api/entry/lookup [post].
 func (h *Handler) RetrieveMany(w http.ResponseWriter, r *http.Request) {
 	keys := make([]string, 0)
 
 	if err := json.NewDecoder(r.Body).Decode(&keys); err != nil {
-		h.render.Error(w, r, fmt.Errorf("invalid json body: %w", err), presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, fmt.Errorf("invalid json body: %w", err), presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
@@ -192,7 +201,7 @@ func (h *Handler) RetrieveMany(w http.ResponseWriter, r *http.Request) {
 
 	results, err := h.store.RetrieveMany(r.Context(), keys)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusInternalServerError))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusInternalServerError))
 		return
 	}
 

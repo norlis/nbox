@@ -7,16 +7,18 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
-	_ "github.com/norlis/httpgate/pkg/kit/problem"
+	"github.com/norlis/httpgate/presenter"
+	_ "github.com/norlis/httpgate/problem"
 	"go.uber.org/zap"
-	"nbox/internal/application"
+	"nbox/internal/nbox"
+	"nbox/internal/transport/httpx"
 )
 
 type Claims struct {
-	Username string   `json:"username"`
-	Name     string   `json:"name"`
-	Roles    []string `json:"roles"`
+	Username   string            `json:"username"`
+	Name       string            `json:"name"`
+	Roles      []string          `json:"roles"`
+	Attributes map[string]string `json:"attributes,omitempty"` // ABAC seed: extra key/value pairs from the authenticator's metadata (e.g. allowed_prefixes, env)
 	jwt.RegisteredClaims
 }
 
@@ -27,12 +29,12 @@ type TokenRequest struct {
 
 type TokenHandler struct {
 	repo   Store
-	config *application.Config
-	render presenters.Presenters
+	config *nbox.Config
+	render *httpx.Render
 	logger *zap.Logger
 }
 
-func NewTokenHandler(repo Store, config *application.Config, render presenters.Presenters, logger *zap.Logger) *TokenHandler {
+func NewTokenHandler(repo Store, config *nbox.Config, render *httpx.Render, logger *zap.Logger) *TokenHandler {
 	return &TokenHandler{repo: repo, config: config, render: render, logger: logger}
 }
 
@@ -48,14 +50,14 @@ func (h *TokenHandler) Register(mux *http.ServeMux) {
 // @Produce json
 // @Param data body TokenRequest true "Payload"
 // @Success 200 {object} object{token=string} "Token generated successfully"
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/auth/token [post].
 func (h *TokenHandler) Token(w http.ResponseWriter, r *http.Request) {
 	payload := &TokenRequest{}
 
 	if err := json.NewDecoder(r.Body).Decode(payload); err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
@@ -63,10 +65,10 @@ func (h *TokenHandler) Token(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error("ErrValidatePassword", zap.Error(err))
 		if errors.Is(err, ErrUserNotFound) || errors.Is(err, ErrInvalidPassword) {
-			h.render.Error(w, r, ErrInvalidCredentials, presenters.WithStatus(http.StatusBadRequest))
+			h.render.Error(w, r, ErrInvalidCredentials, presenter.WithStatus(http.StatusUnauthorized))
 			return
 		}
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusInternalServerError))
 		return
 	}
 
@@ -85,7 +87,7 @@ func (h *TokenHandler) Token(w http.ResponseWriter, r *http.Request) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString(h.config.HmacSecretKey)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusInternalServerError))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusInternalServerError))
 		return
 	}
 

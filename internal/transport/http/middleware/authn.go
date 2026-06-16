@@ -2,28 +2,24 @@ package middleware
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"os"
 
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
+	"github.com/norlis/httpgate/presenter"
 	"go.uber.org/zap"
-	"nbox/internal/application"
 	auth "nbox/internal/auth"
+	"nbox/internal/nbox"
+	"nbox/internal/transport/httpx"
 )
 
 type Authn struct {
-	credentials map[string]string
-	config      *application.Config
-	render      presenters.Presenters
-	logger      *zap.Logger
-	repository  auth.Store
+	config     *nbox.Config
+	render     *httpx.Render
+	logger     *zap.Logger
+	repository auth.Store
 }
 
-func NewAuthn(prefix string, config *application.Config, render presenters.Presenters, logger *zap.Logger, repository auth.Store) *Authn {
-	credentials := map[string]string{}
-	_ = json.Unmarshal([]byte(os.Getenv(prefix)), &credentials)
-	return &Authn{credentials: credentials, config: config, render: render, logger: logger, repository: repository}
+func NewAuthn(config *nbox.Config, render *httpx.Render, logger *zap.Logger, repository auth.Store) *Authn {
+	return &Authn{config: config, render: render, logger: logger, repository: repository}
 }
 
 func (a *Authn) Handler() func(http.Handler) http.Handler {
@@ -48,7 +44,7 @@ func (a *Authn) Handler() func(http.Handler) http.Handler {
 				if isCredentialError(err) {
 					w.Header().Set("WWW-Authenticate", `Basic realm="api"`)
 				}
-				a.render.Error(w, r, err, presenters.WithStatus(http.StatusUnauthorized))
+				a.render.Error(w, r, err, presenter.WithStatus(http.StatusUnauthorized))
 				return
 			}
 

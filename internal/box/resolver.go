@@ -75,7 +75,7 @@ func (r *StrategyResolver) GetImplementedSchemaTypes() []SchemaType {
 
 // Process decodes a base64 content string, validates it, formats it, and returns
 // the canonical bytes plus its SHA-256 hex hash.
-func (r *StrategyResolver) Process(filename, contentBase64 string) ([]byte, string, error) {
+func (r *StrategyResolver) Process(filename, contentBase64 string) (formatted []byte, checksum string, err error) {
 	raw, err := base64.StdEncoding.DecodeString(contentBase64)
 	if err != nil {
 		return nil, "", fmt.Errorf("base64 decode failed: %w", err)
@@ -87,7 +87,7 @@ func (r *StrategyResolver) Process(filename, contentBase64 string) ([]byte, stri
 		return nil, "", fmt.Errorf("validation failed for %s: %w", strategy.SchemaType(), err)
 	}
 
-	formatted, err := strategy.Format(raw)
+	formatted, err = strategy.Format(raw)
 	if err != nil {
 		return nil, "", fmt.Errorf("formatting failed: %w", err)
 	}

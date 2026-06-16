@@ -8,13 +8,12 @@ import (
 	"strings"
 	"time"
 
-	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
-	"nbox/internal/application"
 	"nbox/internal/entry"
+	"nbox/internal/nbox"
 	platformaws "nbox/internal/platform/aws"
 	"nbox/internal/prefix"
 )
@@ -23,7 +22,7 @@ import (
 // con resilience patterns (retry + circuit breaker) para lecturas.
 type DynamoDB struct {
 	client      *dynamodb.Client
-	config      *application.Config
+	config      *nbox.Config
 	logger      *zap.Logger
 	dynamodbKit *platformaws.DynamoDBKit
 	pathUseCase *entry.Processor
@@ -36,7 +35,7 @@ func NewDynamoDB(
 	logger *zap.Logger,
 	dynamodbKit *platformaws.DynamoDBKit,
 	pathUseCase *entry.Processor,
-	config *application.Config,
+	config *nbox.Config,
 ) prefix.Store {
 	return &DynamoDB{
 		client:      client,
@@ -151,7 +150,7 @@ func (d *DynamoDB) List(ctx context.Context) ([]prefix.Config, error) {
 	configs := make([]prefix.Config, 0)
 
 	paginator := dynamodb.NewScanPaginator(d.client, &dynamodb.ScanInput{
-		TableName: awssdk.String(d.tableName),
+		TableName: new(d.tableName),
 	})
 
 	for paginator.HasMorePages() {

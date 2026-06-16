@@ -1,13 +1,16 @@
 package export_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 	"nbox/internal/entry"
 	"nbox/internal/export"
 	exporter "nbox/internal/export/exporter"
+	"nbox/internal/nbox"
 )
 
 func TestJSONExporter_Export(t *testing.T) {
@@ -131,4 +134,28 @@ func TestExportFormat_FileExtension(t *testing.T) {
 			assert.Equal(t, tt.extension, result)
 		})
 	}
+}
+
+func TestGenerator_GetFilename_UsesInstanceNameFromConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := &nbox.Config{InstanceName: "myapp"}
+	g := export.NewGenerator(nil, cfg, zap.NewNop())
+
+	filename := g.GetFilename(export.FormatJSON, "production")
+
+	assert.True(t, strings.HasPrefix(filename, "myapp-"), "filename should start with instance name, got: %s", filename)
+	assert.Contains(t, filename, "production")
+	assert.True(t, strings.HasSuffix(filename, ".json"), "filename should have .json extension, got: %s", filename)
+}
+
+func TestGenerator_GetFilename_DefaultsToNboxWhenInstanceNameEmpty(t *testing.T) {
+	t.Parallel()
+
+	cfg := &nbox.Config{InstanceName: ""}
+	g := export.NewGenerator(nil, cfg, zap.NewNop())
+
+	filename := g.GetFilename(export.FormatDotEnv, "qa")
+
+	assert.True(t, strings.HasPrefix(filename, "nbox-"), "filename should default to 'nbox' prefix, got: %s", filename)
 }

@@ -53,5 +53,4 @@ certs
 
 cmd/example
 
-IMPROVEMENTS/
-/CLAUDE.md
+__pycache__

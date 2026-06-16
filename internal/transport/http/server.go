@@ -1,24 +1,19 @@
 package transporthttp
 
 import (
-	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/middleware"
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
-	"github.com/norlis/httpgate/pkg/adapter/opa"
-	"github.com/norlis/httpgate/pkg/application/health"
-	"github.com/norlis/httpgate/pkg/port"
+	"github.com/norlis/httpgate/authz/opa"
+	"github.com/norlis/httpgate/health"
+	"github.com/norlis/httpgate/middleware"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 	_ "nbox/docs"
 	"nbox/internal/application"
 	auth "nbox/internal/auth"
-	"nbox/internal/event/bus"
-	platformaws "nbox/internal/platform/aws"
+	"nbox/internal/nbox"
 	authmw "nbox/internal/transport/http/middleware"
 )
 
@@ -29,18 +24,15 @@ type Route interface {
 
 type Params struct {
 	fx.In
-	Router          *http.ServeMux
-	Authn           *authmw.Authn
-	TokenHandler    *auth.TokenHandler
-	Status          *health.Status
-	Render          presenters.Presenters
-	Logger          *zap.Logger
-	S3Checker       *platformaws.S3Checker
-	DynamoDBChecker *platformaws.DynamoDBChecker
-	SSMChecker      *platformaws.SSMChecker
-	EventBroker     *bus.Memory
-	UI              *UIHandler
-	Routes          []Route `group:"routes"`
+	Router       *http.ServeMux
+	Authn        *authmw.Authn
+	TokenHandler *auth.TokenHandler
+	Status       *health.Status
+	Readiness    *health.Readiness
+	OPA          *opa.Client
+	Config       *nbox.Config
+	Slog         *slog.Logger
+	Routes       []Route `group:"routes"`
 }
 
 // NewServer
@@ -60,65 +52,53 @@ type Params struct {
 // @name Authorization
 // @description Bearer token authentication. Enter your JWT token in the format: Bearer {token}
 // @openapi 3.0.0.
+// maxRequestBodyBytes caps incoming request bodies to 1 MiB.
+const maxRequestBodyBytes = 1 << 20
+
 func NewServer(params Params) {
 	base := []middleware.Middleware{
-		middleware.TraceId(middleware.WithHeaderName("x-transaction-id"), middleware.WithLogger(params.Logger)),
-		middleware.APIErrorMiddleware(
-			middleware.WithIntercept(http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusInternalServerError),
-			middleware.WithCustomMessage(http.StatusNotFound, "resource not found"),
-			middleware.WithCustomMessage(http.StatusMethodNotAllowed, "method is not allowed for this resource."),
+		middleware.TraceID(
+			middleware.WithHeaderName("x-transaction-id"),
+			middleware.WithLogger(params.Slog),
 		),
-		middleware.Recover(params.Logger, params.Render),
-		middleware.RequestLogger(params.Logger),
-		middleware.AllowAll(params.Logger).Middleware,
+		middleware.InterceptStatus(
+			middleware.WithIntercept(http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusInternalServerError),
+			middleware.WithMessage(http.StatusNotFound, "resource not found"),
+			middleware.WithMessage(http.StatusMethodNotAllowed, "method is not allowed for this resource."),
+		),
+		middleware.Recover(params.Slog),
+		authmw.MaxBodyBytes(maxRequestBodyBytes),
+		middleware.RequestLogger(params.Slog),
+		middleware.AllowAll(),
 	}
 
-	opaConfig := opa.Config{
-		Query:        "data.authz.allow",
-		PoliciesPath: "policies/authz",
-		DataFiles:    []string{},
+	csrfOpts := make([]middleware.CSRFOption, 0, len(params.Config.CSRFTrustedOrigins))
+	for _, o := range params.Config.CSRFTrustedOrigins {
+		csrfOpts = append(csrfOpts, middleware.WithTrustedOrigin(o))
 	}
+	base = append(base, middleware.CSRFProtect(csrfOpts...))
 
-	authz, err := opa.NewOpaSdkClientFromConfig(context.Background(), opaConfig, params.Logger)
-	if err != nil {
-		log.Fatalf("The OPA client could not be initialized: %v", err)
-	}
+	use := middleware.New(base...)
 
-	use := middleware.Chain(base...)
-
-	params.Router.Handle("GET /status", use(params.Status))
-	params.Router.Handle("GET /health", use(health.NewProbe(nil)))
-	params.Router.Handle("GET /ready", use(health.NewProbe(map[string]port.Checker{
-		"s3":       params.S3Checker,
-		"ssm":      params.SSMChecker,
-		"dynamodb": params.DynamoDBChecker,
-	})))
-
-	params.Router.Handle("GET /swagger/", use(httpSwagger.Handler(
+	params.Router.Handle("GET /status", use.Then(params.Status))
+	params.Router.Handle("GET /health", use.Then(health.NewProbe(nil)))
+	params.Router.Handle("GET /ready", use.Then(params.Readiness))
+	params.Router.Handle("GET /swagger/", use.Then(httpSwagger.Handler(
 		httpSwagger.URL("/swagger/doc.json"),
 	)))
-
-	params.Router.Handle("POST /api/auth/token", use(http.HandlerFunc(params.TokenHandler.Token)))
-	params.Router.Handle("GET /api/events", params.EventBroker)
-	params.Router.HandleFunc("GET /events", params.UI.EventsPage)
-	params.Router.Handle("GET /assets/", params.UI.ServeAssets())
+	params.Router.Handle("POST /api/auth/token", use.Then(http.HandlerFunc(params.TokenHandler.Token)))
 
 	api := http.NewServeMux()
-
 	for _, route := range params.Routes {
 		route.Register(api)
 	}
 
-	useAuth := middleware.Chain(
-		append(
-			base,
-			[]middleware.Middleware{
-				params.Authn.Handler(),
-				middleware.AuthorizationMiddleware(authz, fromContextExtractor),
-			}...,
-		)...,
+	useAuth := middleware.New(base...).Append(
+		authmw.CanonicalizeKey(),
+		params.Authn.Handler(),
+		middleware.Authorize(params.OPA, fromContextExtractor),
 	)
-	params.Router.Handle("/api/", useAuth(api))
+	params.Router.Handle("/api/", useAuth.Then(api))
 }
 
 func fromContextExtractor(r *http.Request) (map[string]any, error) {

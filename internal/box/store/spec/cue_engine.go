@@ -17,16 +17,18 @@ import (
 
 // CueEngine implementa SpecEngine usando el lenguaje CUE.
 type CueEngine struct {
-	ctx   *cue.Context
-	cache map[string]cue.Value // specID -> compiled #Schema
-	mu    sync.RWMutex
+	ctx        *cue.Context
+	cache      map[string]cue.Value // specID -> compiled #Schema (for Validate)
+	schemaJSON map[string][]byte    // specID -> rendered JSON Schema bytes (for ExportJSONSchema)
+	mu         sync.RWMutex
 }
 
 // NewCueEngine creates a new CUE-based engine.
 func NewCueEngine() SpecEngine {
 	return &CueEngine{
-		ctx:   cuecontext.New(),
-		cache: make(map[string]cue.Value),
+		ctx:        cuecontext.New(),
+		cache:      make(map[string]cue.Value),
+		schemaJSON: make(map[string][]byte),
 	}
 }
 
@@ -59,9 +61,27 @@ func (e *CueEngine) Validate(_ context.Context, def SpecDefinition, data []byte,
 }
 
 // ExportJSONSchema exports only the #Schema definition from a CUE spec as JSON Schema.
+//
+// The rendered JSON Schema bytes are memoised per spec ID in schemaJSON. On a cache hit
+// the stored slice is returned directly — callers MUST NOT mutate the returned bytes
+// (the box/handler.go caller only writes them to the response body, which is safe).
+// On a cache miss the full compile+generate+marshal pipeline runs under the write lock,
+// keeping e.ctx consistent with InvalidateCache (which also holds the write lock).
 func (e *CueEngine) ExportJSONSchema(_ context.Context, def SpecDefinition) ([]byte, error) {
 	e.mu.RLock()
-	defer e.mu.RUnlock()
+	if b, ok := e.schemaJSON[def.ID]; ok {
+		e.mu.RUnlock()
+		return b, nil
+	}
+	e.mu.RUnlock()
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// Re-check after acquiring the write lock (another goroutine may have populated it).
+	if b, ok := e.schemaJSON[def.ID]; ok {
+		return b, nil
+	}
 
 	val := e.ctx.CompileString(def.RawContent)
 	if val.Err() != nil {
@@ -103,14 +123,17 @@ func (e *CueEngine) ExportJSONSchema(_ context.Context, def SpecDefinition) ([]b
 		return nil, fmt.Errorf("failed to marshal JSON Schema: %w", err)
 	}
 
+	e.schemaJSON[def.ID] = b
 	return b, nil
 }
 
-// InvalidateCache clears the compiled schema cache.
+// InvalidateCache clears all cached state: compiled #Schema values, rendered JSON Schema
+// bytes, and the cue.Context itself (to release interned values from the old context).
 func (e *CueEngine) InvalidateCache() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.cache = make(map[string]cue.Value)
+	e.schemaJSON = make(map[string][]byte)
 	e.ctx = cuecontext.New()
 }
 
@@ -165,9 +188,10 @@ func (e *CueEngine) parseData(data []byte, format string) (cue.Value, error) {
 }
 
 func (e *CueEngine) parseErrors(err error) Result {
-	var validationErrors []Error
+	errs := errors.Errors(err)
+	validationErrors := make([]Error, 0, len(errs))
 
-	for _, ee := range errors.Errors(err) {
+	for _, ee := range errs {
 		path := strings.Join(ee.Path(), ".")
 		msg := ee.Error()
 		msg = strings.ReplaceAll(msg, "#Schema.", "")

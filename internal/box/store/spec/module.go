@@ -8,7 +8,7 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"nbox/assets/specs"
-	"nbox/internal/application"
+	"nbox/internal/nbox"
 )
 
 // Module exporta las dependencies de boxspec para fx.
@@ -28,7 +28,7 @@ var Module = fx.Module("box.spec",
 // LayeredFSParams for fx dependency injection.
 type LayeredFSParams struct {
 	fx.In
-	Config *application.Config
+	Config *nbox.Config
 }
 
 // ProvideLayeredFS creates the layered filesystem with DI.

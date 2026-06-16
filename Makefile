@@ -9,8 +9,8 @@ GIT_SHA := $(shell git rev-parse --short HEAD)
 DATE := $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
 
 LDFLAGS := -ldflags "-s -w \
-	-X $(APP_IMPORT_PATH)/internal/application.GitHash=$(GIT_SHA) \
-	-X $(APP_IMPORT_PATH)/internal/application.Date=$(DATE)"
+	-X $(APP_IMPORT_PATH)/internal/version.GitHash=$(GIT_SHA) \
+	-X $(APP_IMPORT_PATH)/internal/version.Date=$(DATE)"
 
 # --- Herramientas y Módulos ---
 TOOLS_BIN_DIR := $(abspath ./bin)
@@ -118,19 +118,30 @@ run-local-sonar:
 ## ----------------------------------------
 build: clean
 	@echo "==> Construyendo binarios..."
-	GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/amd64/microservice ./cmd/nbox
-	GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/arm64/microservice ./cmd/nbox
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/microservice ./cmd/nbox
-	GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/microservice ./cmd/nbox
+	GOOS=darwin  GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/amd64/microservice ./cmd/nbox
+	GOOS=darwin  GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/amd64/entrypushd  ./cmd/entrypushd
+	GOOS=darwin  GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/amd64/cli    ./cmd/cli
+	GOOS=darwin  GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/arm64/microservice ./cmd/nbox
+	GOOS=darwin  GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/arm64/entrypushd  ./cmd/entrypushd
+	GOOS=darwin  GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/arm64/cli    ./cmd/cli
+	GOOS=linux   GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/microservice  ./cmd/nbox
+	GOOS=linux   GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/entrypushd   ./cmd/entrypushd
+	GOOS=linux   GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/cli     ./cmd/cli
+	GOOS=linux   GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/microservice  ./cmd/nbox
+	GOOS=linux   GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/entrypushd   ./cmd/entrypushd
+	GOOS=linux   GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/cli     ./cmd/cli
 	GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/windows/amd64/microservice ./cmd/nbox
+	GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/windows/amd64/cli     ./cmd/cli
 
 amd64-build:
 	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/microservice ./cmd/nbox
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/hasher ./cmd/hasher
+	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/entrypushd  ./cmd/entrypushd
+	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/cli    ./cmd/cli
 
 arm64-build:
 	GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/microservice ./cmd/nbox
-	GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/hasher ./cmd/hasher
+	GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/entrypushd  ./cmd/entrypushd
+	GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/cli    ./cmd/cli
 
 clean:
 	@echo "==> Limpiando builds anteriores..."
@@ -153,3 +164,18 @@ mod-vendor:
 .PHONY: docs
 docs:
 	$(TOOLS_BIN_DIR)/swag init -g internal/transport/http/server.go --parseDependency
+
+
+## ----------------------------------------
+## Proto codegen
+## ----------------------------------------
+.PHONY: proto-gen
+proto-gen:
+	@echo "==> Generando código gRPC desde proto..."
+	@protoc \
+	  --go_out=. \
+	  --go_opt=module=nbox \
+	  --go-grpc_out=. \
+	  --go-grpc_opt=module=nbox \
+	  proto/kvstream.proto
+	@echo "==> Generado en gen/stream/v1/"

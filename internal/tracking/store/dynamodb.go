@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"go.uber.org/zap"
-	"nbox/internal/application"
+	"nbox/internal/nbox"
 	platformaws "nbox/internal/platform/aws"
 	"nbox/internal/tracking"
 )
@@ -26,7 +25,7 @@ type DynamoDB struct {
 
 func NewDynamoDB(
 	client *dynamodb.Client,
-	config *application.Config,
+	config *nbox.Config,
 	dynamodbKit *platformaws.DynamoDBKit,
 	logger *zap.Logger,
 ) tracking.Store {
@@ -101,13 +100,13 @@ func (d *DynamoDB) History(ctx context.Context, key string, opts ...tracking.His
 	}
 
 	queryInput := &dynamodb.QueryInput{
-		TableName:                 awssdk.String(d.tableName),
-		ConsistentRead:            awssdk.Bool(true),
+		TableName:                 new(d.tableName),
+		ConsistentRead:            new(true),
 		KeyConditionExpression:    expr.KeyCondition(),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
-		ScanIndexForward:          awssdk.Bool(false),
-		Limit:                     awssdk.Int32(config.Limit),
+		ScanIndexForward:          new(false),
+		Limit:                     new(config.Limit),
 	}
 
 	paginator := dynamodb.NewQueryPaginator(d.client, queryInput)

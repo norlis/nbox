@@ -4,11 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	"golang.org/x/crypto/bcrypt"
 	"nbox/internal/auth"
 )
+
+// dummyHash is a precomputed bcrypt hash used when a username is not found, so
+// that the not-found path performs ~the same amount of work as the wrong-password
+// path. This prevents username enumeration via response-time differences.
+//
+//nolint:gochecknoglobals
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("nbox-dummy-password"), bcrypt.DefaultCost)
 
 type userSchema map[string]struct {
 	Password string   `json:"password"`
@@ -20,9 +26,9 @@ type users map[string]auth.User
 
 // InMemory es un Store de usuarios respaldado por un mapa en memoria
 // inicializado a partir de credenciales JSON.
+// The users map is immutable after construction; no mutex is needed.
 type InMemory struct {
 	users users
-	mu    sync.RWMutex
 }
 
 // NewInMemory crea un Store en memoria a partir de credenciales en JSON.
@@ -33,9 +39,6 @@ func NewInMemory(jsonCredentials []byte) (auth.Store, error) {
 	}
 
 	store := &InMemory{users: make(users, len(schema))}
-
-	store.mu.Lock()
-	defer store.mu.Unlock()
 
 	for username, data := range schema {
 		store.users[username] = auth.User{
@@ -50,9 +53,6 @@ func NewInMemory(jsonCredentials []byte) (auth.Store, error) {
 }
 
 func (r *InMemory) FindByUsername(_ context.Context, username string) (*auth.User, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	user, exists := r.users[username]
 	if !exists {
 		return nil, auth.ErrUserNotFound
@@ -63,6 +63,10 @@ func (r *InMemory) FindByUsername(_ context.Context, username string) (*auth.Use
 func (r *InMemory) ValidatePassword(ctx context.Context, username, password string) (*auth.User, error) {
 	user, err := r.FindByUsername(ctx, username)
 	if err != nil {
+		// Run a bcrypt comparison against the dummy hash so that the not-found
+		// path takes approximately the same time as the wrong-password path,
+		// preventing username enumeration via timing side-channel.
+		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
 		return nil, err
 	}
 

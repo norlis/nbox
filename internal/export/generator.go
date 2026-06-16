@@ -5,26 +5,25 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"time"
 
 	"go.uber.org/zap"
-	"nbox/internal/application"
 	"nbox/internal/entry"
 	"nbox/internal/export/exporter"
+	"nbox/internal/nbox"
 )
 
 // Generator handles export of entries to various formats.
 type Generator struct {
 	entryAdapter entry.Manager
-	config       *application.Config
+	config       *nbox.Config
 	logger       *zap.Logger
 	exporters    map[Format]exporter.Exporter
 }
 
 func NewGenerator(
 	entryAdapter entry.Manager,
-	config *application.Config,
+	config *nbox.Config,
 	logger *zap.Logger,
 ) *Generator {
 	g := &Generator{
@@ -98,7 +97,7 @@ func (g *Generator) GetContentType(format Format) string {
 
 func (g *Generator) GetFilename(format Format, prefix string) string {
 	timestamp := time.Now().Format("20060102-150405")
-	instance := os.Getenv("INSTANCE_NAME")
+	instance := g.config.InstanceName
 	if instance == "" {
 		instance = "nbox"
 	}

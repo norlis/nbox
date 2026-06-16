@@ -10,19 +10,19 @@ import (
 type Type string
 
 const (
-	EntryActions             Type = "entry.upsert"
-	EntryDeleted             Type = "entry.deleted"
-	EntryRetrieveSecretValue Type = "entry.retrieve.secret"
-	TemplateCreated          Type = "template.created"
-	TemplateUpdated          Type = "template.updated"
+	EntryUpserted   Type = "nbox.entry.upserted"
+	EntryDeleted    Type = "nbox.entry.deleted"
+	EntrySecretRead Type = "nbox.entry.secret.read"
+	TemplateCreated Type = "nbox.template.created"
+	TemplateUpdated Type = "nbox.template.updated"
 )
 
-type Event[T any] struct {
-	Type          Type      `json:"type"`
-	TransactionId string    `json:"transactionId"`
-	Username      string    `json:"username"`
-	Timestamp     time.Time `json:"timestamp"`
-	Payload       T         `json:"payload"`
+type Event struct {
+	Type          Type            `json:"type"`
+	TransactionId string          `json:"transactionId"`
+	Username      string          `json:"username"`
+	Timestamp     time.Time       `json:"timestamp"`
+	Payload       json.RawMessage `json:"payload"`
 }
 
 type Webhook struct {
@@ -32,13 +32,9 @@ type Webhook struct {
 }
 
 // Publisher es el contrato para publicar eventos en el bus.
+// Accepts 1..N events; implementations choose batching strategy.
 type Publisher interface {
-	Publish(ctx context.Context, event Event[json.RawMessage]) error
-}
-
-// Dispatcher despacha eventos a la infraestructura subyacente.
-type Dispatcher interface {
-	Dispatch(ctx context.Context, event Event[json.RawMessage])
+	Publish(ctx context.Context, events ...Event) error
 }
 
 // WebhookStore persiste y consulta webhooks registrados.

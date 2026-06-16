@@ -87,7 +87,6 @@ Resources:
             - Key: environment
               Value: !Ref Environment
 
-
   BoxTable:
     Type: AWS::DynamoDB::GlobalTable
     UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
@@ -144,6 +143,39 @@ Resources:
               Value: v2
 
 
+  ConfigTable:
+    Type: AWS::DynamoDB::GlobalTable
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      TableName: !Sub "${Prefix}-config-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true            # KMS (AWS-managed aws/dynamodb key)
+      AttributeDefinitions:
+        - AttributeName: kind
+          AttributeType: S
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: kind
+          KeyType: HASH
+        - AttributeName: id
+          KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES   # phase 2: push invalidation
+      Replicas:
+        - Region: us-east-1
+          DeletionProtectionEnabled: !If [IsProduction, true, false]
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+          Tags:
+            - Key: project
+              Value: !Ref Prefix
+            - Key: environment
+              Value: !Ref Environment
+
+
   BoxBucket:
     Type: AWS::S3::Bucket
     UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
@@ -184,5 +216,7 @@ Outputs:
     Value: !Ref BoxTable
   PrefixConfigTableName:
     Value: !Ref PrefixConfigTable
+  ConfigTableName:
+    Value: !Ref ConfigTable
   BucketName:
     Value: !Ref BoxBucket

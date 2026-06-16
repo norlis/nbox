@@ -28,7 +28,7 @@ func (m *mockEntryAdapter) Resolve(_ context.Context, _ string) (*entry.Entry, e
 	return nil, nil
 }
 
-func (m *mockEntryAdapter) List(_ context.Context, _ string) ([]entry.Entry, error) {
+func (m *mockEntryAdapter) List(_ context.Context, _ string, _ ...entry.ListOption) ([]entry.Entry, error) {
 	text := `[
 		{ "path": "widget-x/development", "key": "key", "value": "key-test", "secure": false },
 		{ "path": "widget-x/development", "key": "debug", "value": "false", "secure": false },

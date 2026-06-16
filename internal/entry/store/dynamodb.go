@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -15,6 +14,7 @@ import (
 	"go.uber.org/zap"
 	"nbox/internal/application"
 	"nbox/internal/entry"
+	"nbox/internal/nbox"
 	platformaws "nbox/internal/platform/aws"
 	"nbox/internal/prefix"
 )
@@ -23,6 +23,27 @@ const (
 	DynamoDBLockPrefix = "_"
 	BatchSize          = 25
 )
+
+// dynamodbClientAPI is the minimal interface over *dynamodb.Client that DynamoDB uses
+// directly. It satisfies dynamodb.QueryAPIClient so that dynamodb.NewQueryPaginator
+// can accept it.
+type dynamodbClientAPI interface {
+	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
+	Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
+}
+
+// Compile-time assertion: *dynamodb.Client satisfies dynamodbClientAPI.
+var _ dynamodbClientAPI = (*dynamodb.Client)(nil)
+
+// dynamodbKitAPI is the minimal interface over *platformaws.DynamoDBKit that
+// DynamoDB uses for batch reads and writes.
+type dynamodbKitAPI interface {
+	BatchWrite(ctx context.Context, tableName string, requests []types.WriteRequest) ([]types.WriteRequest, error)
+	BatchGet(ctx context.Context, tableName string, keys []map[string]types.AttributeValue) ([]map[string]types.AttributeValue, error)
+}
+
+// Compile-time assertion: *platformaws.DynamoDBKit satisfies dynamodbKitAPI.
+var _ dynamodbKitAPI = (*platformaws.DynamoDBKit)(nil)
 
 // recordBase es la estructura interna para mapear filas DynamoDB.
 type recordBase struct {
@@ -33,21 +54,21 @@ type recordBase struct {
 
 type record struct {
 	Path string `dynamodbav:"Path"`
-	*recordBase
+	recordBase
 }
 
 // DynamoDB implementa entry.Store (Upsert, Retrieve, List, Delete) usando DynamoDB.
 type DynamoDB struct {
-	client      *dynamodb.Client
-	config      *application.Config
+	client      dynamodbClientAPI
+	config      *nbox.Config
 	pathUseCase *entry.Processor
 	logger      *zap.Logger
-	dynamodbKit *platformaws.DynamoDBKit
+	dynamodbKit dynamodbKitAPI
 }
 
 func NewDynamoDB(
 	client *dynamodb.Client,
-	config *application.Config,
+	config *nbox.Config,
 	pathUseCase *entry.Processor,
 	logger *zap.Logger,
 	dynamodbKit *platformaws.DynamoDBKit,
@@ -122,10 +143,7 @@ func (d *DynamoDB) Upsert(ctx context.Context, entries []entry.Entry) entry.Resu
 
 	uniqueRequests := make(map[string]types.WriteRequest)
 
-	updatedBy := "ghost"
-	if user, ok := application.UserFromContext(ctx); ok {
-		updatedBy = user.Name
-	}
+	updatedBy := application.ActorFromContext(ctx)
 	now := time.Now().UTC()
 
 	for _, en := range entries {
@@ -141,7 +159,7 @@ func (d *DynamoDB) Upsert(ctx context.Context, entries []entry.Entry) entry.Resu
 
 		rec := record{
 			Path: path,
-			recordBase: &recordBase{
+			recordBase: recordBase{
 				Key:   key,
 				Value: []byte(en.Value),
 				Metadata: entry.Metadata{
@@ -177,7 +195,7 @@ func (d *DynamoDB) Upsert(ctx context.Context, entries []entry.Entry) entry.Resu
 			if _, exists := uniqueRequests[parentRecordKey]; !exists {
 				parentRecord := record{
 					Path: parentPath,
-					recordBase: &recordBase{
+					recordBase: recordBase{
 						Key: parentKey,
 						Metadata: entry.Metadata{
 							UpdatedAt: now,
@@ -236,8 +254,8 @@ func (d *DynamoDB) Retrieve(ctx context.Context, key string, _ ...entry.Retrieve
 
 	resp, err := d.client.GetItem(ctx, &dynamodb.GetItemInput{
 		Key:            map[string]types.AttributeValue{"Path": p, "Key": k},
-		TableName:      awssdk.String(d.config.EntryTableName),
-		ConsistentRead: awssdk.Bool(true),
+		TableName:      new(d.config.EntryTableName),
+		ConsistentRead: new(true),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get item from DynamoDB: %w", err)
@@ -260,9 +278,9 @@ func (d *DynamoDB) Retrieve(ctx context.Context, key string, _ ...entry.Retrieve
 	}, nil
 }
 
-func (d *DynamoDB) List(ctx context.Context, prefix string) ([]entry.Entry, error) {
-	prefix = strings.TrimSuffix(prefix, "/")
-	cleanPrefix := d.pathUseCase.EscapeEmptyPath(prefix)
+func (d *DynamoDB) listLevel(ctx context.Context, pfx string) ([]entry.Entry, error) {
+	pfx = strings.TrimSuffix(pfx, "/")
+	cleanPrefix := d.pathUseCase.EscapeEmptyPath(pfx)
 
 	keyEx := expression.Key("Path").Equal(expression.Value(cleanPrefix))
 	expr, err := expression.NewBuilder().WithKeyCondition(keyEx).Build()
@@ -271,8 +289,8 @@ func (d *DynamoDB) List(ctx context.Context, prefix string) ([]entry.Entry, erro
 	}
 
 	paginator := dynamodb.NewQueryPaginator(d.client, &dynamodb.QueryInput{
-		TableName:                 awssdk.String(d.config.EntryTableName),
-		ConsistentRead:            awssdk.Bool(true),
+		TableName:                 new(d.config.EntryTableName),
+		ConsistentRead:            new(true),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 		KeyConditionExpression:    expr.KeyCondition(),
@@ -290,7 +308,14 @@ func (d *DynamoDB) List(ctx context.Context, prefix string) ([]entry.Entry, erro
 			return nil, fmt.Errorf("unmarshal list: %w", err)
 		}
 
-		for _, r := range records {
+		if cap(entries)-len(entries) < len(records) {
+			grown := make([]entry.Entry, len(entries), len(entries)+len(records))
+			copy(grown, entries)
+			entries = grown
+		}
+
+		for i := range records {
+			r := &records[i]
 			if !strings.HasPrefix(r.Key, DynamoDBLockPrefix) {
 				entries = append(entries, entry.Entry{
 					Key:      d.pathUseCase.Concat(r.Path, r.Key),
@@ -306,10 +331,57 @@ func (d *DynamoDB) List(ctx context.Context, prefix string) ([]entry.Entry, erro
 	return entries, nil
 }
 
+// List returns entries under pfx. Default: a single level, folders included
+// (what the UI uses to navigate). With entry.LeavesOnly(): walks the whole
+// subtree and returns only leaves.
+func (d *DynamoDB) List(ctx context.Context, pfx string, opts ...entry.ListOption) ([]entry.Entry, error) {
+	if entry.NewListOptions(opts...).LeavesOnly {
+		return d.listLeaves(ctx, pfx)
+	}
+	return d.listLevel(ctx, pfx)
+}
+
+// listLeaves walks the subtree reusing listLevel per level: folders (Key
+// ending in "/", same rule the UI uses) are enqueued to descend and NOT
+// returned; blank-path records are excluded. Always returns a non-nil slice.
+func (d *DynamoDB) listLeaves(ctx context.Context, pfx string) ([]entry.Entry, error) {
+	leaves := make([]entry.Entry, 0)
+	queue := []string{pfx}
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		level, err := d.listLevel(ctx, current)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range level {
+			if strings.HasSuffix(e.Key, "/") { // folder → descend, don't return
+				queue = append(queue, e.Key)
+				continue
+			}
+			if strings.TrimSpace(e.Path) == "" { // blank-path record → exclude
+				continue
+			}
+			leaves = append(leaves, e)
+		}
+	}
+	return leaves, nil
+}
+
+// Delete removes the target item and its entire subtree from DynamoDB.
+//
+// Because Path is the partition key, a begins_with query is not possible.
+// Instead we perform a BFS walk: for each directory level queried, items whose
+// Key ends in "/" are child directories — we enqueue their full path
+// (Concat(item.Path, item.Key)) and continue until the queue is empty.
+// All collected (Path, Key) pairs are batch-deleted along with the root item.
 func (d *DynamoDB) Delete(ctx context.Context, key string) error {
 	p := d.pathUseCase.PathWithoutKey(key)
 	k := d.pathUseCase.BaseKey(key)
 
+	// Always delete the root item first.
 	rootDelete := types.WriteRequest{
 		DeleteRequest: &types.DeleteRequest{
 			Key: map[string]types.AttributeValue{
@@ -318,72 +390,77 @@ func (d *DynamoDB) Delete(ctx context.Context, key string) error {
 			},
 		},
 	}
-
 	if _, err := d.dynamodbKit.BatchWrite(ctx, d.config.EntryTableName, []types.WriteRequest{rootDelete}); err != nil {
 		return fmt.Errorf("failed to delete root item: %w", err)
 	}
 
-	prefix := d.pathUseCase.EscapeEmptyPath(strings.TrimSuffix(key, "/"))
-
-	keyEx := expression.Key("Path").Equal(expression.Value(prefix))
-	expr, _ := expression.NewBuilder().WithKeyCondition(keyEx).Build()
-
-	peekResult, err := d.client.Query(ctx, &dynamodb.QueryInput{
-		TableName:                 awssdk.String(d.config.EntryTableName),
-		ExpressionAttributeNames:  expr.Names(),
-		ExpressionAttributeValues: expr.Values(),
-		KeyConditionExpression:    expr.KeyCondition(),
-		Limit:                     awssdk.Int32(1),
-		Select:                    types.SelectCount,
-	})
-	if err != nil {
-		d.logger.Warn("Failed to check for children, proceeding with full deletion", zap.Error(err))
-	} else if peekResult.Count == 0 {
-		return nil
-	}
+	// BFS queue of Path values to scan for children.
+	// Start from the root's path level, which is the key itself stripped of trailing slash.
+	queue := []string{d.pathUseCase.EscapeEmptyPath(strings.TrimSuffix(key, "/"))}
 
 	proj := expression.NamesList(expression.Name("Path"), expression.Name("Key"))
-	expr, _ = expression.NewBuilder().
-		WithKeyCondition(keyEx).
-		WithProjection(proj).
-		Build()
 
-	paginator := dynamodb.NewQueryPaginator(d.client, &dynamodb.QueryInput{
-		TableName:                 awssdk.String(d.config.EntryTableName),
-		ExpressionAttributeNames:  expr.Names(),
-		ExpressionAttributeValues: expr.Values(),
-		KeyConditionExpression:    expr.KeyCondition(),
-		ProjectionExpression:      expr.Projection(),
-	})
+	for len(queue) > 0 {
+		// Dequeue.
+		currentPath := queue[0]
+		queue = queue[1:]
 
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
+		keyEx := expression.Key("Path").Equal(expression.Value(currentPath))
+		expr, err := expression.NewBuilder().
+			WithKeyCondition(keyEx).
+			WithProjection(proj).
+			Build()
 		if err != nil {
-			return fmt.Errorf("failed to list children for deletion: %w", err)
+			return fmt.Errorf("expression builder for path %q: %w", currentPath, err)
 		}
 
-		batchReqs := make([]types.WriteRequest, 0, len(page.Items))
+		paginator := dynamodb.NewQueryPaginator(d.client, &dynamodb.QueryInput{
+			TableName:                 new(d.config.EntryTableName),
+			ExpressionAttributeNames:  expr.Names(),
+			ExpressionAttributeValues: expr.Values(),
+			KeyConditionExpression:    expr.KeyCondition(),
+			ProjectionExpression:      expr.Projection(),
+		})
 
-		var records []record
-		if err := attributevalue.UnmarshalListOfMaps(page.Items, &records); err != nil {
-			return fmt.Errorf("unmarshal error during delete: %w", err)
-		}
-
-		for _, r := range records {
-			pAv, _ := attributevalue.Marshal(r.Path)
-			kAv, _ := attributevalue.Marshal(r.Key)
-
-			batchReqs = append(batchReqs, types.WriteRequest{
-				DeleteRequest: &types.DeleteRequest{
-					Key: map[string]types.AttributeValue{"Path": pAv, "Key": kAv},
-				},
-			})
-		}
-
-		if len(batchReqs) > 0 {
-			failed, err := d.dynamodbKit.BatchWrite(ctx, d.config.EntryTableName, batchReqs)
+		for paginator.HasMorePages() {
+			page, err := paginator.NextPage(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to delete batch of children (failed: %d): %w", len(failed), err)
+				return fmt.Errorf("failed to list children for path %q: %w", currentPath, err)
+			}
+			if len(page.Items) == 0 {
+				continue
+			}
+
+			var records []record
+			if err := attributevalue.UnmarshalListOfMaps(page.Items, &records); err != nil {
+				return fmt.Errorf("unmarshal error during delete for path %q: %w", currentPath, err)
+			}
+
+			batchReqs := make([]types.WriteRequest, 0, len(records))
+			for _, r := range records {
+				pAv, _ := attributevalue.Marshal(r.Path)
+				kAv, _ := attributevalue.Marshal(r.Key)
+				batchReqs = append(batchReqs, types.WriteRequest{
+					DeleteRequest: &types.DeleteRequest{
+						Key: map[string]types.AttributeValue{"Path": pAv, "Key": kAv},
+					},
+				})
+
+				// If the Key ends in "/" this item is a directory marker; enqueue its
+				// subtree path so we descend into grandchildren.
+				if strings.HasSuffix(r.Key, "/") {
+					childPath := d.pathUseCase.EscapeEmptyPath(
+						strings.TrimSuffix(d.pathUseCase.Concat(r.Path, r.Key), "/"),
+					)
+					queue = append(queue, childPath)
+				}
+			}
+
+			if len(batchReqs) > 0 {
+				failed, err := d.dynamodbKit.BatchWrite(ctx, d.config.EntryTableName, batchReqs)
+				if err != nil {
+					return fmt.Errorf("failed to delete batch for path %q (failed: %d): %w", currentPath, len(failed), err)
+				}
 			}
 		}
 	}

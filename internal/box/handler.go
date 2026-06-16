@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
-	_ "github.com/norlis/httpgate/pkg/kit/problem"
+	"github.com/norlis/httpgate/presenter"
+	_ "github.com/norlis/httpgate/problem"
 	"nbox/internal/box/store/spec"
+	"nbox/internal/transport/httpx"
 )
 
 type Input struct {
@@ -25,7 +26,7 @@ type Handler struct {
 	store    Store
 	renderer *Renderer
 	registry *spec.SpecRegistry
-	render   presenters.Presenters
+	render   *httpx.Render
 	resolver *StrategyResolver
 }
 
@@ -33,7 +34,7 @@ func NewHandler(
 	store Store,
 	renderer *Renderer,
 	registry *spec.SpecRegistry,
-	render presenters.Presenters,
+	render *httpx.Render,
 	resolver *StrategyResolver,
 ) *Handler {
 	return &Handler{
@@ -74,16 +75,16 @@ func (h *Handler) Register(api *http.ServeMux) {
 // @Security BearerAuth
 // @Param data body Command[Box] true "Upsert template"
 // @Success 200 {object} []string ""
-// @Failure 400 {object} problem.ProblemDetail "Bad Request"
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 400 {object} problem.Detail "Bad Request"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/box [post].
 func (h *Handler) UpsertBox(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	command := &Command[Box]{}
 	if err := json.NewDecoder(r.Body).Decode(command); err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
@@ -104,9 +105,9 @@ func (h *Handler) UpsertBox(w http.ResponseWriter, r *http.Request) {
 // @Param template path string true "template name"
 // @Param data body Input true "Template content (Base64 encoded)"
 // @Success 200 {object} []string "List of updated paths"
-// @Failure 400 {object} problem.ProblemDetail "Bad Request"
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 400 {object} problem.Detail "Bad Request"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/box/{service}/{stage}/{template} [post].
 func (h *Handler) UpsertBoxV2(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -117,7 +118,7 @@ func (h *Handler) UpsertBoxV2(w http.ResponseWriter, r *http.Request) {
 
 	var req Input
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
@@ -141,7 +142,7 @@ func (h *Handler) UpsertBoxV2(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	h.render.JSON(w, r, result, presenters.WithStatusCode(status))
+	h.render.JSON(w, r, result, presenter.WithStatusCode(status))
 }
 
 // Exist
@@ -156,8 +157,8 @@ func (h *Handler) UpsertBoxV2(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} object{exist=bool} ""
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/box/{service}/{stage}/{template} [head].
 func (h *Handler) Exist(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -168,7 +169,7 @@ func (h *Handler) Exist(w http.ResponseWriter, r *http.Request) {
 
 	exists, err := h.store.BoxExists(ctx, service, stage, template)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusNotFound))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusNotFound))
 		return
 	}
 
@@ -186,8 +187,8 @@ func (h *Handler) Exist(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} string ""
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/box/{service}/{stage}/{template} [get].
 func (h *Handler) Retrieve(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -198,12 +199,13 @@ func (h *Handler) Retrieve(w http.ResponseWriter, r *http.Request) {
 
 	data, err := h.store.RetrieveBox(ctx, service, stage, template)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusNotFound))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusNotFound))
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write(data)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(data) //nolint:gosec // G705: text/plain + nosniff; template content served as data, not HTML
 }
 
 // Build
@@ -217,8 +219,8 @@ func (h *Handler) Retrieve(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} string ""
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/box/{service}/{stage}/{template}/build [get].
 func (h *Handler) Build(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -227,27 +229,29 @@ func (h *Handler) Build(w http.ResponseWriter, r *http.Request) {
 	stage := r.PathValue("stage")
 	template := r.PathValue("template")
 
+	q := r.URL.Query()
 	args := make(map[string]string)
-	for key := range r.URL.Query() {
+	for key := range q {
 		if key == "service" || key == "stage" || key == "template" {
 			continue
 		}
-		args[key] = r.URL.Query().Get(key)
+		args[key] = q.Get(key)
 	}
 
-	opts := make([]BuildOption, 0)
-	if _, isStrict := r.URL.Query()["strict"]; isStrict {
+	var opts []BuildOption
+	if _, isStrict := q["strict"]; isStrict {
 		opts = append(opts, WithBuildTemplateStrict())
 	}
 
 	data, err := h.renderer.BuildBox(ctx, service, stage, template, args, opts...)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(h.resolveErrorStatus(err)))
+		h.render.Error(w, r, err, presenter.WithStatus(h.resolveErrorStatus(err)))
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(data))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write([]byte(data)) //nolint:gosec // G705: text/plain + nosniff; rendered template served as data, not HTML
 }
 
 // List
@@ -259,15 +263,15 @@ func (h *Handler) Build(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} []Box ""
-// @Failure 400 {object} problem.ProblemDetail "Bad Request"
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 400 {object} problem.Detail "Bad Request"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/box [get].
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	data, err := h.store.List(ctx)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusNotFound))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusNotFound))
 		return
 	}
 
@@ -284,8 +288,8 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} Stage ""
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/box/{service}/{stage} [get].
 func (h *Handler) Stage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -293,7 +297,7 @@ func (h *Handler) Stage(w http.ResponseWriter, r *http.Request) {
 	stage := r.PathValue("stage")
 	data, err := h.renderer.Detail(ctx, service, stage)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusNotFound))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusNotFound))
 		return
 	}
 	h.render.JSON(w, r, data)
@@ -310,8 +314,8 @@ func (h *Handler) Stage(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} []string ""
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/box/{service}/{stage}/{template}/vars [get].
 func (h *Handler) ListVars(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -331,7 +335,7 @@ func (h *Handler) ListVars(w http.ResponseWriter, r *http.Request) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} []string "List of schema types (e.g. json, txt)"
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
+// @Failure 401 {object} problem.Detail "Unauthorized"
 // @Router /api/box/schemas [get].
 func (h *Handler) ListSchemaTypes(w http.ResponseWriter, r *http.Request) {
 	types := h.resolver.GetImplementedSchemaTypes()
@@ -346,8 +350,8 @@ func (h *Handler) ListSchemaTypes(w http.ResponseWriter, r *http.Request) {
 // @Security    BasicAuth
 // @Security    BearerAuth
 // @Success     200 {array} []spec.SpecDefinition
-// @Failure     401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure     500 {object} problem.ProblemDetail "Internal error"
+// @Failure     401 {object} problem.Detail "Unauthorized"
+// @Failure     500 {object} problem.Detail "Internal error"
 // @Router      /api/boxspec/specs [get].
 func (h *Handler) ListSpecs(w http.ResponseWriter, r *http.Request) {
 	specs := h.registry.List()
@@ -362,12 +366,12 @@ func (h *Handler) ListSpecs(w http.ResponseWriter, r *http.Request) {
 // @Security    BasicAuth
 // @Security    BearerAuth
 // @Success     200 {object} map[string]int "count of loaded specs"
-// @Failure     401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure     500 {object} problem.ProblemDetail "Internal error"
+// @Failure     401 {object} problem.Detail "Unauthorized"
+// @Failure     500 {object} problem.Detail "Internal error"
 // @Router      /api/boxspec/reload [post].
 func (h *Handler) ReloadSpecs(w http.ResponseWriter, r *http.Request) {
 	if err := h.registry.Reload(r.Context()); err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusInternalServerError))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusInternalServerError))
 		return
 	}
 	specs := h.registry.List()
@@ -383,26 +387,26 @@ func (h *Handler) ReloadSpecs(w http.ResponseWriter, r *http.Request) {
 // @Security    BearerAuth
 // @Param       pattern query string true "Filename pattern to match (e.g., task-definition.json)"
 // @Success     200 {object} map[string]interface{} "JSON Schema"
-// @Failure     400 {object} problem.ProblemDetail "Missing pattern parameter"
-// @Failure     404 {object} problem.ProblemDetail "No matching spec found"
-// @Failure     500 {object} problem.ProblemDetail "Internal error"
+// @Failure     400 {object} problem.Detail "Missing pattern parameter"
+// @Failure     404 {object} problem.Detail "No matching spec found"
+// @Failure     500 {object} problem.Detail "Internal error"
 // @Router      /api/boxspec/resolve [get].
 func (h *Handler) ResolveSpec(w http.ResponseWriter, r *http.Request) {
 	pattern := r.URL.Query().Get("pattern")
 	if pattern == "" {
-		h.render.Error(w, r, errors.New("missing required query parameter: pattern"), presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, errors.New("missing required query parameter: pattern"), presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
 	s, schemaBytes, err := h.registry.ExportJSONSchema(r.Context(), pattern)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusUnprocessableEntity))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusUnprocessableEntity))
 		return
 	}
 
 	var schema any
 	if err := json.Unmarshal(schemaBytes, &schema); err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusInternalServerError))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusInternalServerError))
 		return
 	}
 
@@ -417,18 +421,18 @@ func (h *Handler) ResolveSpec(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param data body ValidateInput true "Template data"
 // @Success 200 {object} spec.ValidationResult
-// @Failure 400 {object} problem.ProblemDetail "Validation Failed"
+// @Failure 400 {object} problem.Detail "Validation Failed"
 // @Router /api/boxspec/validate [post].
 func (h *Handler) ValidateTemplate(w http.ResponseWriter, r *http.Request) {
 	var input ValidateInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
 	contentBytes, _, err := h.resolver.Process(input.Filename, input.Content)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
@@ -436,7 +440,7 @@ func (h *Handler) ValidateTemplate(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.registry.ValidateByFilename(r.Context(), input.Filename, contentBytes, format)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusInternalServerError))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusInternalServerError))
 		return
 	}
 

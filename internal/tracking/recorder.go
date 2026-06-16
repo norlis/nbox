@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/middleware"
+	"github.com/norlis/httpgate/middleware"
 	"go.uber.org/zap"
 	"nbox/internal/application"
 	"nbox/internal/entry"
@@ -13,41 +13,60 @@ import (
 	"nbox/internal/prefix"
 )
 
-// Recorder wraps an entry.Manager, adding change tracking and event dispatching on writes.
+const asyncTaskTimeout = 5 * time.Second
+
+// Recorder wraps an entry.Manager, adding change tracking and event publishing on writes.
 type Recorder struct {
-	base     entry.Manager
-	tracker  Store
-	notifier event.Dispatcher
-	logger   *zap.Logger
+	base      entry.Manager
+	tracker   Store
+	publisher event.Publisher
+	logger    *zap.Logger
 }
 
-// NewRecorder returns an entry.Manager decorator that records changes and dispatches events.
+// NewRecorder returns an entry.Manager decorator that records changes and publishes events.
 func NewRecorder(
 	base entry.Manager,
 	tracker Store,
-	notifier event.Dispatcher,
+	publisher event.Publisher,
 	logger *zap.Logger,
 ) entry.Manager {
 	return &Recorder{
-		base:     base,
-		tracker:  tracker,
-		notifier: notifier,
-		logger:   logger,
+		base:      base,
+		tracker:   tracker,
+		publisher: publisher,
+		logger:    logger,
 	}
 }
 
 func (r *Recorder) user(ctx context.Context) string {
-	user, ok := application.UserFromContext(ctx)
-	if ok {
-		return user.Name
-	}
-	return "ghost"
+	return application.ActorFromContext(ctx)
 }
 
-func (r *Recorder) dispatchEvents(ctx context.Context, traceID, updatedBy string, results entry.Results) {
-	now := time.Now().UTC()
+// async runs fn detached from the request lifecycle (WithoutCancel) with a bounded
+// timeout and panic recovery: audit/event work must survive request cancellation,
+// but must not leak goroutines or crash the process.
+func (r *Recorder) async(parent context.Context, task string, fn func(ctx context.Context)) {
+	bgCtx := context.WithoutCancel(parent)
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				r.logger.Error("async task panicked",
+					zap.String("task", task),
+					zap.Any("recover", rec),
+				)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(bgCtx, asyncTaskTimeout)
+		defer cancel()
+		fn(ctx)
+	}()
+}
 
-	for key, res := range results {
+func (r *Recorder) publishEvents(ctx context.Context, traceID, updatedBy string, results entry.Results) {
+	now := time.Now().UTC()
+	events := make([]event.Event, 0, len(results))
+
+	for _, res := range results {
 		if res.Err != nil {
 			continue
 		}
@@ -61,17 +80,23 @@ func (r *Recorder) dispatchEvents(ctx context.Context, traceID, updatedBy string
 
 		payloadBytes, _ := json.Marshal(payloadObj)
 
-		r.notifier.Dispatch(ctx, event.Event[json.RawMessage]{
-			Type:          event.EntryActions,
+		events = append(events, event.Event{
+			Type:          event.EntryUpserted,
 			TransactionId: traceID,
 			Username:      updatedBy,
 			Timestamp:     now,
 			Payload:       payloadBytes,
 		})
+	}
 
-		r.logger.Debug("Event dispatched",
-			zap.String("key", key),
-			zap.String("event", string(event.EntryActions)),
+	if len(events) == 0 {
+		return
+	}
+
+	if err := r.publisher.Publish(ctx, events...); err != nil {
+		r.logger.Error("publish batch failed",
+			zap.Int("count", len(events)),
+			zap.Error(err),
 		)
 	}
 }
@@ -131,13 +156,12 @@ func (r *Recorder) Upsert(ctx context.Context, entries []entry.Entry) entry.Resu
 
 	results := r.base.Upsert(ctx, entries)
 	updatedBy := r.user(ctx)
-	bgCtx := context.WithoutCancel(ctx)
-	id := middleware.TraceIdFromContext(ctx)
+	id := middleware.TraceIDFromContext(ctx)
 
-	go func() {
-		r.registerChanges(bgCtx, updatedBy, results, entryIndex)
-		r.dispatchEvents(bgCtx, id, updatedBy, results)
-	}()
+	r.async(ctx, "upsert.track", func(c context.Context) {
+		r.registerChanges(c, updatedBy, results, entryIndex)
+		r.publishEvents(c, id, updatedBy, results)
+	})
 
 	return results
 }
@@ -146,46 +170,20 @@ func (r *Recorder) Retrieve(ctx context.Context, key string, opts ...entry.Retri
 	return r.base.Retrieve(ctx, key, opts...) //nolint:wrapcheck
 }
 
+// Resolve delegates to the base store. Secret reads are NOT audited/published
+// (see decision: reads are not state changes and don't belong on the event
+// topic; nothing consumed the secret.read event and entrypushd's delivery
+// resolves would flood it).
 func (r *Recorder) Resolve(ctx context.Context, key string) (*entry.Entry, error) {
-	val, err := r.base.Resolve(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-
-	if !val.Secure {
-		return val, nil
-	}
-
-	bgCtx := context.WithoutCancel(ctx)
-	updatedBy := r.user(ctx)
-	id := middleware.TraceIdFromContext(ctx)
-
-	go func() {
-		auditEntry := *val
-		if auditEntry.Secure {
-			auditEntry.Value = "*****"
-		}
-
-		//nolint:errchkjson
-		payload, _ := json.Marshal(auditEntry)
-		r.notifier.Dispatch(bgCtx, event.Event[json.RawMessage]{
-			TransactionId: id,
-			Type:          event.EntryRetrieveSecretValue,
-			Username:      updatedBy,
-			Timestamp:     time.Now().UTC(),
-			Payload:       payload,
-		})
-	}()
-
-	return val, nil
+	return r.base.Resolve(ctx, key) //nolint:wrapcheck
 }
 
 func (r *Recorder) Delete(ctx context.Context, key string) error {
 	return r.base.Delete(ctx, key)
 }
 
-func (r *Recorder) List(ctx context.Context, pfx string) ([]entry.Entry, error) {
-	return r.base.List(ctx, pfx)
+func (r *Recorder) List(ctx context.Context, pfx string, opts ...entry.ListOption) ([]entry.Entry, error) {
+	return r.base.List(ctx, pfx, opts...)
 }
 
 func (r *Recorder) RegisterBackend(adapter entry.PartialStore) {

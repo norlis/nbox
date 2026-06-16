@@ -4,8 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"os"
+	"log/slog"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 	"go.uber.org/zap"
@@ -15,11 +16,12 @@ import (
 	authstore "nbox/internal/auth/store"
 	"nbox/internal/box"
 	boxstore "nbox/internal/box/store"
+	"nbox/internal/config"
 	"nbox/internal/entry"
 	entrystore "nbox/internal/entry/store"
-	"nbox/internal/event"
-	"nbox/internal/event/bus"
+	"nbox/internal/event/publisher"
 	"nbox/internal/export"
+	"nbox/internal/nbox"
 	platformaws "nbox/internal/platform/aws"
 	"nbox/internal/prefix"
 	prefixstore "nbox/internal/prefix/store"
@@ -55,18 +57,27 @@ NNNNNNNN         NNNNNNNBBBBBBBBBBBBBBBBB        OOOOOOOOO     XXXXXXX       XXX
 func main() {
 	fmt.Print(banner)
 
-	flag.StringVar(&application.Port, "port", "7337", "--port=7337")
-	flag.StringVar(&application.Address, "address", "", "--address=0.0.0.0")
+	var listenAddress, listenPort string
+	flag.StringVar(&listenPort, "port", "7337", "--port=7337")
+	flag.StringVar(&listenAddress, "address", "", "--address=0.0.0.0")
 	flag.Parse()
 
+	pubCfg, err := publisher.LoadConfig()
+	if err != nil {
+		log.Fatalf("nbox: load publisher config: %v", err)
+	}
+
 	app := fx.New(
+		fx.Provide(logger.LoadConfig),
 		fx.Provide(logger.NewLogger),
+		fx.Provide(logger.NewSlog),
 		fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
 			return &fxevent.ZapLogger{Logger: log.WithOptions(zap.IncreaseLevel(zapcore.WarnLevel))}
 		}),
 
 		// Core infrastructure
 		application.Module,
+		nbox.Module,
 		platformaws.Module,
 
 		// Domain modules (business logic)
@@ -74,19 +85,20 @@ func main() {
 		entry.Module,
 		box.Module,
 		export.Module,
-		event.Module,
 		tracking.Module,
 		prefix.Module,
 
 		// Store wiring — kept here because store sub-packages import their domain
 		// packages, making it impossible to wire them inside the domain module.go files.
-		fx.Provide(func(config *application.Config) auth.Store {
-			credentials := os.Getenv(config.CredentialsLoader.EnvVarKey)
-			repo, err := authstore.NewInMemory([]byte(credentials))
-			if err != nil {
-				log.Fatal(err)
+		fx.Provide(func(cfg *nbox.Config, ddb *dynamodb.Client) config.Source {
+			return config.NewSourceChain(ddb, cfg.ConfigTableName)
+		}),
+		fx.Provide(func(src config.Source, cfg *nbox.Config, lc fx.Lifecycle, log *slog.Logger) (auth.Store, error) {
+			snap := config.NewSnapshot(config.KeyBasicAuth, src, authstore.NewInMemory, cfg.ConfigTTL, log)
+			if err := config.Activate(lc, snap); err != nil {
+				return nil, err
 			}
-			return repo
+			return authstore.NewRefreshingStore(snap), nil
 		}),
 		fx.Provide(boxstore.NewS3),
 		fx.Provide(prefixstore.NewDynamoDB),
@@ -109,15 +121,15 @@ func main() {
 			gw.RegisterBackend(ssmSec)
 			return gw
 		}),
-		// Event bus: wired here because event/bus imports event (cycle).
-		fx.Provide(bus.NewMemory),
-		fx.Provide(func(m *bus.Memory) event.Publisher { return m }),
+		fx.Supply(pubCfg),
+		fx.Provide(publisher.New),
 
 		// Tracking recorder wraps entry.Manager with audit trail + event dispatch.
 		// Must be at top-level scope so it applies to all consumers (box, export, handlers).
 		fx.Decorate(tracking.NewRecorder),
 
 		// HTTP transport
+		fx.Supply(transporthttp.ServerConfig{Address: listenAddress, Port: listenPort}),
 		transporthttp.Module,
 	)
 

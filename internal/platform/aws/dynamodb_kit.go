@@ -6,7 +6,6 @@ import (
 	"slices"
 	"time"
 
-	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/cenkalti/backoff/v4"
@@ -146,7 +145,7 @@ func (k *DynamoDBKit) processGetChunk(
 			RequestItems: map[string]types.KeysAndAttributes{
 				tableName: {
 					Keys:           currentKeys,
-					ConsistentRead: awssdk.Bool(true),
+					ConsistentRead: new(true),
 				},
 			},
 		}

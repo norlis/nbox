@@ -44,8 +44,8 @@
       "patterns": ["^GET:/api/entry/key\\?v=(development|qa|global)/(.*)"]
     },
     "entries:read:prefix": {
-      "description": "List entries by prefix",
-      "patterns": ["^GET:/api/entry/prefix\\?v=(.*)"]
+      "description": "List entries by prefix (tolerates extra query params like &leaves)",
+      "patterns": ["^GET:/api/entry/prefix\\?(.*&)?v=(.*)"]
     },
     "entries:read:prefix:non_production": {
       "description": "List entries only from development, QA, and global",
@@ -69,6 +69,11 @@
     "secrets:read:value": {
       "description": "Retrieve plain secret values (sensitive)",
       "patterns": ["^GET:/api/entry/secret-value\\?v=(.*)"]
+    },
+
+    "secrets:read:value:vault": {
+      "description": "Resolve plaintext ONLY for vault (passbox) keys. Accepts the '/' literal and its %2F url-encoded form (the entrypushd client encodes slashes).",
+      "patterns": ["^GET:/api/entry/resolve\\?v=passbox(/|%2[Ff])(.*)"]
     },
 
     "tracking:read": {

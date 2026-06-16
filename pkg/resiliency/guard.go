@@ -82,6 +82,15 @@ func (g *Guard) Execute(ctx context.Context, fn func() error) error {
 	defer g.sem.Release(1)
 
 	_, err := g.cb.Execute(func() (any, error) {
+		// Fast path: no partial-batch retries configured — skip building backoff.
+		if g.maxRetries == 0 {
+			err := fn()
+			if err != nil && !isPartialBatch(err) {
+				return nil, err
+			}
+			return nil, err
+		}
+
 		exp := backoff.NewExponentialBackOff()
 		exp.InitialInterval = g.baseDelay
 		exp.RandomizationFactor = 0.5

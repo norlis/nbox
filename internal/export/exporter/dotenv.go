@@ -1,6 +1,7 @@
 package exporter
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -12,7 +13,8 @@ type Dotenv struct{}
 func NewDotenv() *Dotenv { return &Dotenv{} }
 
 func (e *Dotenv) Export(entries []entry.Entry) ([]byte, error) {
-	var builder strings.Builder
+	var buf bytes.Buffer
+	buf.Grow(len(entries) * 64)
 
 	for _, en := range entries {
 		rawKey := en.ShortKey
@@ -21,10 +23,10 @@ func (e *Dotenv) Export(entries []entry.Entry) ([]byte, error) {
 		}
 		key := entry.ConvertToEnvVarName(rawKey)
 		value := e.escapeValue(en.Value)
-		_, _ = fmt.Fprintf(&builder, "%s=%s\n", key, value)
+		_, _ = fmt.Fprintf(&buf, "%s=%s\n", key, value)
 	}
 
-	return []byte(builder.String()), nil
+	return buf.Bytes(), nil
 }
 
 func (e *Dotenv) escapeValue(value string) string {

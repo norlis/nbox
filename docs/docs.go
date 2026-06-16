@@ -59,13 +59,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 }
@@ -97,19 +97,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -158,19 +158,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -207,7 +207,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -257,13 +257,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -320,13 +320,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -396,19 +396,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -471,13 +471,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -534,13 +534,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -600,13 +600,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -643,13 +643,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -693,19 +693,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Missing pattern parameter",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "404": {
                         "description": "No matching spec found",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -745,13 +745,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -799,7 +799,7 @@ const docTemplate = `{
                     "400": {
                         "description": "Validation Failed",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 }
@@ -845,19 +845,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -929,31 +929,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid parameters (missing prefix or invalid format)",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "401": {
                         "description": "Unauthorized - Missing or invalid token",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "403": {
                         "description": "Forbidden - Insufficient permissions",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "404": {
                         "description": "No entries found with specified prefix",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -996,13 +996,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -1048,13 +1048,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -1108,13 +1108,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -1160,13 +1160,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -1209,19 +1209,19 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "404": {
                         "description": "Not found",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -1229,6 +1229,44 @@ const docTemplate = `{
                     {
                         "BasicAuth": []
                     },
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/me/permissions": {
+            "get": {
+                "description": "Returns the permission names and resource patterns granted to the authenticated caller's roles (UI hints, not a security boundary).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "me"
+                ],
+                "summary": "Current caller capabilities",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/problem.Detail"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/problem.Detail"
+                        }
+                    }
+                },
+                "security": [
                     {
                         "BearerAuth": []
                     }
@@ -1258,7 +1296,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -1295,7 +1333,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -1338,56 +1376,19 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "404": {
                         "description": "Not found",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
-                        }
-                    }
-                },
-                "security": [
-                    {
-                        "BasicAuth": []
-                    },
-                    {
-                        "BearerAuth": []
-                    }
-                ]
-            }
-        },
-        "/api/static/environments": {
-            "get": {
-                "description": "Deprecated: Use /api/static/stages instead.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "static"
-                ],
-                "summary": "List allowed prefixes (Deprecated)",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -1424,7 +1425,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -1482,13 +1483,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     },
                     "500": {
                         "description": "Internal error",
                         "schema": {
-                            "$ref": "#/definitions/problem.ProblemDetail"
+                            "$ref": "#/definitions/problem.Detail"
                         }
                     }
                 },
@@ -1778,36 +1779,35 @@ const docTemplate = `{
                 "BackendParameterStoreSecure"
             ]
         },
-        "problem.ProblemDetail": {
+        "problem.Detail": {
             "type": "object",
             "properties": {
                 "detail": {
-                    "description": "Detail es una explicación legible y específica de esta ocurrencia del problema.",
+                    "description": "Detail is a human-readable explanation specific to this occurrence.",
                     "type": "string"
                 },
                 "instance": {
-                    "description": "Instance es un URI que identifica la ocurrencia específica del problema.",
+                    "description": "Instance is a URI identifying the specific occurrence of the problem.",
                     "type": "string"
                 },
                 "requestId": {
-                    "type": "string"
-                },
-                "stackTrace": {
+                    "description": "RequestID correlates the problem to a specific request.",
                     "type": "string"
                 },
                 "status": {
-                    "description": "Status es el código de estado HTTP reflejado para esta ocurrencia del problema.",
+                    "description": "Status is the HTTP status code for this occurrence.",
                     "type": "integer"
                 },
                 "timestamp": {
+                    "description": "Timestamp records when the problem was created.",
                     "type": "string"
                 },
                 "title": {
-                    "description": "Title es un resumen corto y legible del tipo de problema.\nNo debería cambiar entre distintas ocurrencias del mismo problema.",
+                    "description": "Title is a short, human-readable summary of the problem type.\nShould not change across occurrences of the same problem.",
                     "type": "string"
                 },
                 "type": {
-                    "description": "Type es un URI que identifica el tipo de problema.\nSe recomienda que provea documentación legible para los desarrolladores.",
+                    "description": "Type is a URI identifying the problem type. Should provide\ndeveloper-readable documentation.",
                     "type": "string"
                 }
             }
@@ -1826,7 +1826,7 @@ const docTemplate = `{
     }
 }`
 
-// SwaggerInfo holds exported Swagger Info so clients can modify it
+// SwaggerInfo holds exported Swagger Info so clients can modify it.
 var SwaggerInfo = &swag.Spec{
 	Version:          "2.0",
 	Host:             "",

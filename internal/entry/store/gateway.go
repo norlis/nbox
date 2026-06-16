@@ -123,15 +123,20 @@ func (g *Gateway) Delete(ctx context.Context, key string) error {
 	}
 
 	if store != g.index {
-		_ = g.index.Delete(ctx, key)
+		if err := g.index.Delete(ctx, key); err != nil {
+			g.logger.Error("index delete failed after backend delete; possible split-brain, manual reconcile required",
+				zap.String("key", key),
+				zap.Error(err),
+			)
+		}
 	}
 
 	return nil
 }
 
 // List ALWAYS uses the Global Index (DynamoDB).
-func (g *Gateway) List(ctx context.Context, prefix string) ([]entry.Entry, error) {
-	return g.index.List(ctx, prefix)
+func (g *Gateway) List(ctx context.Context, pfx string, opts ...entry.ListOption) ([]entry.Entry, error) {
+	return g.index.List(ctx, pfx, opts...)
 }
 
 func (g *Gateway) Upsert(ctx context.Context, entries []entry.Entry) entry.Results {

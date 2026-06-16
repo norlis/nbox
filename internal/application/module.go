@@ -1,17 +1,17 @@
 package application
 
 import (
-	status "github.com/norlis/httpgate/pkg/application/health"
+	"github.com/norlis/httpgate/health"
 	"go.uber.org/fx"
+	"nbox/internal/version"
 )
 
 var Module = fx.Module("application",
-	fx.Provide(NewConfigFromEnv),
-	fx.Provide(func() *status.Status {
-		version := GitHash
-		if version == "" {
-			version = "unknown.dev"
+	fx.Provide(func() *health.Status {
+		v := version.GitHash
+		if v == "" {
+			v = "unknown.dev"
 		}
-		return status.NewStatus(version)
+		return health.NewStatus(v)
 	}),
 )

@@ -129,7 +129,7 @@ func WithDecryption(decrypt bool) RetrieveOption {
 // Reader es el contrato de lectura de entries.
 type Reader interface {
 	Retrieve(ctx context.Context, key string, opts ...RetrieveOption) (*Entry, error)
-	List(ctx context.Context, prefix string) ([]Entry, error)
+	List(ctx context.Context, prefix string, opts ...ListOption) ([]Entry, error)
 	RetrieveMany(ctx context.Context, keys []string) (map[string]*Entry, error)
 }
 

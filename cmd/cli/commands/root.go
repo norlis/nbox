@@ -40,4 +40,6 @@ func init() {
 	// Registrar subcomandos
 	rootCmd.AddCommand(seedCmd)
 	rootCmd.AddCommand(hasherCmd)
+	rootCmd.AddCommand(approleCmd)
+	rootCmd.AddCommand(configCmd)
 }

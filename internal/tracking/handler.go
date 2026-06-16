@@ -8,15 +8,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/norlis/httpgate/pkg/adapter/apidriven/presenters"
+	"github.com/norlis/httpgate/presenter"
+	"nbox/internal/transport/httpx"
 )
 
 type Handler struct {
 	tracker Store
-	render  presenters.Presenters
+	render  *httpx.Render
 }
 
-func NewHandler(tracker Store, render presenters.Presenters) *Handler {
+func NewHandler(tracker Store, render *httpx.Render) *Handler {
 	return &Handler{tracker: tracker, render: render}
 }
 
@@ -35,14 +36,14 @@ func (h *Handler) Register(api *http.ServeMux) {
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} []Record ""
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
+// @Failure 401 {object} problem.Detail "Unauthorized"
+// @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/track/key [get].
 func (h *Handler) Tracking(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("v")
 
 	if key == "" {
-		h.render.Error(w, r, errors.New("parameter 'v' (key) is required"), presenters.WithStatus(http.StatusBadRequest))
+		h.render.Error(w, r, errors.New("parameter 'v' (key) is required"), presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
 
@@ -51,7 +52,7 @@ func (h *Handler) Tracking(w http.ResponseWriter, r *http.Request) {
 	if fromStr := r.URL.Query().Get("from"); fromStr != "" {
 		t, err := parseTimeParam(fromStr)
 		if err != nil {
-			h.render.Error(w, r, fmt.Errorf("invalid 'from' parameter: %w. Examples: 30m, 2h, 7d, 2w, 1M, 2023-01-01T15:00:00Z", err), presenters.WithStatus(http.StatusBadRequest))
+			h.render.Error(w, r, fmt.Errorf("invalid 'from' parameter: %w. Examples: 30m, 2h, 7d, 2w, 1M, 2023-01-01T15:00:00Z", err), presenter.WithStatus(http.StatusBadRequest))
 			return
 		}
 		opts = append(opts, WithHistorySince(t))
@@ -60,7 +61,7 @@ func (h *Handler) Tracking(w http.ResponseWriter, r *http.Request) {
 	if toStr := r.URL.Query().Get("to"); toStr != "" {
 		t, err := parseTimeParam(toStr)
 		if err != nil {
-			h.render.Error(w, r, fmt.Errorf("invalid 'to' parameter: %w. Examples: 30m, 2h, 7d, 2w, 1M, 2023-01-01T15:00:00Z", err), presenters.WithStatus(http.StatusBadRequest))
+			h.render.Error(w, r, fmt.Errorf("invalid 'to' parameter: %w. Examples: 30m, 2h, 7d, 2w, 1M, 2023-01-01T15:00:00Z", err), presenter.WithStatus(http.StatusBadRequest))
 			return
 		}
 		opts = append(opts, WithHistoryTo(t))
@@ -74,7 +75,7 @@ func (h *Handler) Tracking(w http.ResponseWriter, r *http.Request) {
 
 	history, err := h.tracker.History(r.Context(), key, opts...)
 	if err != nil {
-		h.render.Error(w, r, err, presenters.WithStatus(http.StatusInternalServerError))
+		h.render.Error(w, r, err, presenter.WithStatus(http.StatusInternalServerError))
 		return
 	}
 
