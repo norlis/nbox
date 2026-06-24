@@ -11,26 +11,25 @@ import (
 
 func TestNew_DisabledViaFlag_ReturnsNoop(t *testing.T) {
 	pub, err := publisher.New(
-		publisher.Config{Enabled: false, Topic: "irrelevant"},
-		nil, nil, zap.NewNop(),
+		publisher.Config{Enabled: false},
+		nil, "irrelevant", zap.NewNop(),
 	)
 	require.NoError(t, err)
 	_, isNoop := pub.(*publisher.NoopPublisher)
-	require.True(t, isNoop, "Enabled=false must return NoopPublisher regardless of Topic")
+	require.True(t, isNoop, "Enabled=false must return NoopPublisher regardless of subject")
 }
 
-func TestNew_EnabledWithoutTopic_FailsFast(t *testing.T) {
+func TestNew_EnabledWithoutSubject_FailsFast(t *testing.T) {
 	_, err := publisher.New(
-		publisher.Config{Enabled: true, Topic: ""},
-		nil, nil, zap.NewNop(),
+		publisher.Config{Enabled: true},
+		nil, "", zap.NewNop(),
 	)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "NBOX_EVENT_TOPIC")
+	require.Contains(t, err.Error(), "empty event subject")
 }
 
 func TestLoadConfig_DefaultsAreApplied(t *testing.T) {
 	t.Setenv("NBOX_EVENT_PUBLISH", "")
-	t.Setenv("NBOX_EVENT_TOPIC", "")
 	t.Setenv("NBOX_EVENT_SOURCE", "")
 	t.Setenv("NBOX_EVENT_MAX_ATTEMPTS", "")
 	t.Setenv("NBOX_EVENT_INITIAL_BACKOFF", "")

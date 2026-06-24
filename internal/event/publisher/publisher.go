@@ -13,17 +13,15 @@ import (
 	"nbox/internal/event"
 )
 
-// innerPublisher is the contract the SNSPublisher delegates to. Decoupled from
-// the concrete event-driven sns.Publisher so we can test the mapping in
-// isolation.
+// innerPublisher is the contract the Publisher delegates to. Decoupled from
+// the concrete transport so we can test the mapping in isolation.
 type innerPublisher interface {
 	Publish(cloudevents.Event) error
 }
 
-// SNSPublisher converts event.Event values into cloudevents.Event and
-// delegates publication to inner (which is an event-driven sns.Publisher in
-// production).
-type SNSPublisher struct {
+// Publisher converts event.Event values into cloudevents.Event and delegates
+// publication to inner (a NATS core publisher in production). Transport-neutral.
+type Publisher struct {
 	inner          innerPublisher
 	source         string
 	maxAttempts    int
@@ -33,7 +31,7 @@ type SNSPublisher struct {
 }
 
 // Publish implements event.Publisher.
-func (p *SNSPublisher) Publish(ctx context.Context, events ...event.Event) error {
+func (p *Publisher) Publish(ctx context.Context, events ...event.Event) error {
 	var firstErr error
 	for _, e := range events {
 		ce, err := p.toCloudEvent(e)
@@ -63,7 +61,7 @@ func (p *SNSPublisher) Publish(ctx context.Context, events ...event.Event) error
 	return firstErr
 }
 
-func (p *SNSPublisher) publishOnce(ctx context.Context, ce cloudevents.Event, orig event.Event) error {
+func (p *Publisher) publishOnce(ctx context.Context, ce cloudevents.Event, orig event.Event) error {
 	// Fast path: no retries configured — skip building the backoff entirely.
 	if p.maxAttempts <= 1 {
 		if err := p.inner.Publish(ce); err != nil {
@@ -99,7 +97,7 @@ func (p *SNSPublisher) publishOnce(ctx context.Context, ce cloudevents.Event, or
 	return nil
 }
 
-func (p *SNSPublisher) toCloudEvent(e event.Event) (cloudevents.Event, error) {
+func (p *Publisher) toCloudEvent(e event.Event) (cloudevents.Event, error) {
 	key := extractKey(e.Payload)
 	ce := cloudevents.New()
 	ce.SetID(e.TransactionId)

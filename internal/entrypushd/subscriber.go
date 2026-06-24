@@ -4,27 +4,24 @@ import (
 	"fmt"
 	"log/slog"
 
-	awssqs "github.com/aws/aws-sdk-go-v2/service/sqs"
+	natsgo "github.com/nats-io/nats.go"
 	"github.com/norlis/event-driven/pkg/eventmux"
-	"github.com/norlis/event-driven/pkg/transport/aws"
-	"github.com/norlis/event-driven/pkg/transport/aws/sqs"
+	"github.com/norlis/event-driven/pkg/transport/nats/core"
 )
 
-// NewSQSSubscriber returns an eventmux.Subscription backed by event-driven's
-// sqs.Subscriber.
-func NewSQSSubscriber(
+// NewNATSSubscriber returns an eventmux.Subscription backed by NATS core.
+// QueueGroup is left EMPTY → fan-out: every entrypushd instance receives
+// every event (replaces the SQS competing-consumer).
+func NewNATSSubscriber(
 	cfg Config,
-	sqsClient *awssqs.Client,
-	identity *aws.Identity,
+	nc *natsgo.Conn,
 	logger *slog.Logger,
 ) (eventmux.Subscription, error) {
-	sub, err := sqs.NewSubscriber(sqsClient, sqs.SubscriberConfig{
-		Queue:          cfg.Queue,
-		Identity:       identity,
-		ConsumeWorkers: cfg.Workers,
-	}, logger.With(slog.String("logger", "sqs-subscriber")))
+	sub, err := core.NewSubscriber(nc, core.SubscriberConfig{
+		Subject: cfg.EventSubject(),
+	}, logger.With(slog.String("logger", "nats-subscriber")))
 	if err != nil {
-		return nil, fmt.Errorf("entrypushd: sqs subscriber: %w", err)
+		return nil, fmt.Errorf("entrypushd: nats subscriber: %w", err)
 	}
 	return sub, nil
 }

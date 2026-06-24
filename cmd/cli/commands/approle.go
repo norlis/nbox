@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -36,20 +35,18 @@ var approleGenerateCmd = &cobra.Command{
 
 Example:
   nbox-cli approle generate entrypushd-service --opa-role entrypushd`,
-	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Args: exactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name := strings.TrimSpace(args[0])
 		if name == "" {
-			fmt.Println("Error: role name cannot be empty")
-			os.Exit(1)
+			return usageErrorf("role name cannot be empty")
 		}
 
 		opaRoles, _ := cmd.Flags().GetStringSlice("opa-role")
 		cost, _ := cmd.Flags().GetInt("cost")
 
 		if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
-			fmt.Printf("Error: cost must be between %d and %d\n", bcrypt.MinCost, bcrypt.MaxCost)
-			os.Exit(1)
+			return usageErrorf("cost must be between %d and %d", bcrypt.MinCost, bcrypt.MaxCost)
 		}
 
 		roleID := uuid.NewString()
@@ -57,8 +54,7 @@ Example:
 
 		hash, err := bcrypt.GenerateFromPassword([]byte(secretID), cost)
 		if err != nil {
-			fmt.Printf("Error: bcrypt failed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("bcrypt: %w", err)
 		}
 
 		entry := map[string]any{
@@ -76,22 +72,23 @@ Example:
 
 		jsonOut, err := json.MarshalIndent(entry, "", "  ")
 		if err != nil {
-			fmt.Printf("Error: marshal: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("marshal: %w", err)
 		}
 
-		fmt.Println("\nAppRole generated successfully")
-		fmt.Println(strings.Repeat("=", 70))
-		fmt.Printf("role_id:    %s\n", roleID)
-		fmt.Printf("secret_id:  %s\n", secretID)
-		fmt.Println(strings.Repeat("=", 70))
-		fmt.Println("Distribute secret_id to the client via a secure channel.")
-		fmt.Println("It will NOT be shown again.")
-		fmt.Println()
-		fmt.Println("Add this entry to NBOX_APPROLE_ROLES:")
-		fmt.Println(strings.Repeat("-", 70))
-		fmt.Println(string(jsonOut))
-		fmt.Println(strings.Repeat("-", 70))
+		// Diagnostics + secret to stderr; the pasteable JSON entry to stdout so
+		// `approle generate x > role.json` captures only the entry.
+		infoln("\nAppRole generated successfully")
+		infoln(strings.Repeat("=", 70))
+		info("role_id:    %s\n", roleID)
+		info("secret_id:  %s\n", secretID)
+		infoln(strings.Repeat("=", 70))
+		infoln("Distribute secret_id to the client via a secure channel.")
+		infoln("It will NOT be shown again.")
+		infoln("")
+		infoln("Add this entry to NBOX_APPROLE_ROLES:")
+
+		outln(string(jsonOut))
+		return nil
 	},
 }
 
@@ -103,18 +100,16 @@ SecretHash entry to the role's secret_hashes array in NBOX_APPROLE_ROLES.
 
 After clients have migrated to the new secret_id, remove the old hash
 to complete the rotation.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		cost, _ := cmd.Flags().GetInt("cost")
 		if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
-			fmt.Printf("Error: cost must be between %d and %d\n", bcrypt.MinCost, bcrypt.MaxCost)
-			os.Exit(1)
+			return usageErrorf("cost must be between %d and %d", bcrypt.MinCost, bcrypt.MaxCost)
 		}
 
 		secretID := uuid.NewString()
 		hash, err := bcrypt.GenerateFromPassword([]byte(secretID), cost)
 		if err != nil {
-			fmt.Printf("Error: bcrypt failed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("bcrypt: %w", err)
 		}
 
 		entry := map[string]any{
@@ -123,16 +118,17 @@ to complete the rotation.`,
 		}
 		jsonOut, _ := json.MarshalIndent(entry, "", "  ")
 
-		fmt.Println("\nNew secret_id generated")
-		fmt.Println(strings.Repeat("=", 70))
-		fmt.Printf("secret_id:  %s\n", secretID)
-		fmt.Println(strings.Repeat("=", 70))
-		fmt.Println("Distribute secret_id via secure channel. Not shown again.")
-		fmt.Println()
-		fmt.Println("Append this SecretHash entry to the role's secret_hashes array:")
-		fmt.Println(strings.Repeat("-", 70))
-		fmt.Println(string(jsonOut))
-		fmt.Println(strings.Repeat("-", 70))
+		// Secret + guidance to stderr; the SecretHash entry to stdout.
+		infoln("\nNew secret_id generated")
+		infoln(strings.Repeat("=", 70))
+		info("secret_id:  %s\n", secretID)
+		infoln(strings.Repeat("=", 70))
+		infoln("Distribute secret_id via secure channel. Not shown again.")
+		infoln("")
+		infoln("Append this SecretHash entry to the role's secret_hashes array:")
+
+		outln(string(jsonOut))
+		return nil
 	},
 }
 

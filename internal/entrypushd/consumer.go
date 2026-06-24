@@ -14,10 +14,10 @@ import (
 
 const consumerStopTimeout = 30 * time.Second
 
-// StartConsumer hooks the SQS subscriber into the fx lifecycle. Each
+// StartConsumer hooks the event subscriber into the fx lifecycle. Each
 // received *event.Message goes through h.Handle, wrapped in a panic
 // recoverer. Acks every successfully-processed message; Nacks on panic so
-// SQS redelivers.
+// the transport redelivers (redelivery depends on transport).
 func StartConsumer(
 	lc fx.Lifecycle,
 	sub eventmux.Subscription,
@@ -55,7 +55,7 @@ func StartConsumer(
 				}
 			}()
 
-			logger.Info("sqs consumer started")
+			logger.Info("event consumer started")
 			return nil
 		},
 		OnStop: func(_ context.Context) error {
@@ -65,7 +65,7 @@ func StartConsumer(
 			select {
 			case <-done:
 			case <-time.After(consumerStopTimeout):
-				logger.Warn("sqs consumer stop timed out", slog.Duration("after", consumerStopTimeout))
+				logger.Warn("event consumer stop timed out", slog.Duration("after", consumerStopTimeout))
 			}
 			return nil
 		},

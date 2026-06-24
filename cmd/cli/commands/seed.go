@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,32 +17,33 @@ import (
 	"nbox/internal/prefix"
 )
 
-// runSeed returns the Fx-invokable function.
-// It receives a reader already prepared to decouple Fx logic from file handling.
-func runSeed(reader io.Reader, sourceDescription string) func(prefix.Store, fx.Shutdowner) {
+// runSeed returns the Fx-invokable function. It receives a reader already
+// prepared to decouple Fx logic from file handling, and reports any failure
+// through outErr (fx.Invoke can't return one) so RunE maps it to an exit code.
+func runSeed(reader io.Reader, sourceDescription string, outErr *error) func(prefix.Store, fx.Shutdowner) {
 	return func(repo prefix.Store, shutdowner fx.Shutdowner) {
 		// Ensure shutdown on exit
 		defer func() { _ = shutdowner.Shutdown() }()
 
-		fmt.Printf("\n🌱 Seeding prefix configurations from: %s\n", sourceDescription)
+		info("\n🌱 Seeding prefix configurations from: %s\n", sourceDescription)
 
 		// Read content
 		content, err := io.ReadAll(reader)
 		if err != nil {
-			printError("Failed to read input", err)
+			*outErr = fmt.Errorf("read input: %w", err)
 			return
 		}
 
 		// Parse JSON (supports both array and single object)
 		configs, err := parseConfigs(content)
 		if err != nil {
-			printError("Invalid JSON format", err)
-			fmt.Println("💡 Tip: Ensure fields match 'prefix', 'typeDefault', etc.")
+			infoln("💡 Tip: Ensure fields match 'prefix', 'typeDefault', etc.")
+			*outErr = fmt.Errorf("invalid JSON format: %w", err)
 			return
 		}
 
 		if len(configs) == 0 {
-			fmt.Println("⚠️  Warning: No configurations found in input.")
+			*outErr = errors.New("no configurations found in input")
 			return
 		}
 
@@ -49,15 +51,22 @@ func runSeed(reader io.Reader, sourceDescription string) func(prefix.Store, fx.S
 		prepareConfigs(configs)
 
 		// Persist with batch upsert
-		fmt.Printf("\n📊 Processing %d configurations...\n", len(configs))
+		info("\n📊 Processing %d configurations...\n", len(configs))
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		fmt.Printf("💾 Saving to DynamoDB...\n")
+		info("💾 Saving to DynamoDB...\n")
 		stats, err := repo.Upsert(ctx, configs)
 
-		// Print summary report
+		// Print summary report (diagnostics) and surface a failure.
 		printSummary(stats, len(configs), err)
+		if err != nil {
+			*outErr = fmt.Errorf("batch upsert: %w", err)
+			return
+		}
+		if stats.Failed > 0 {
+			*outErr = fmt.Errorf("%d configuration(s) failed", stats.Failed)
+		}
 	}
 }
 
@@ -92,7 +101,7 @@ func prepareConfigs(configs []prefix.Config) {
 		configs[i].UpdatedAt = now
 		configs[i].UpdatedBy = "nbox-cli"
 		// Visual feedback
-		fmt.Printf("  • %s (%s)\n", configs[i].Prefix, configs[i].TypeDefault)
+		info("  • %s (%s)\n", configs[i].Prefix, configs[i].TypeDefault)
 	}
 }
 
@@ -122,29 +131,24 @@ func getInputReader(input string) (io.Reader, string, error) {
 	return nil, "", fmt.Errorf("input '%s' is not a valid file and does not look like JSON", input)
 }
 
-// printError prints formatted error messages.
-func printError(msg string, err error) {
-	fmt.Printf("❌ Error: %s: %v\n", msg, err)
-}
-
-// printSummary displays the operation summary.
+// printSummary displays the operation summary on stderr (diagnostic output).
 func printSummary(stats prefix.UpsertStats, total int, err error) {
 	if err != nil {
-		fmt.Printf("\n⚠️  Warning: Batch operation reported errors: %v\n", err)
+		info("\n⚠️  Warning: Batch operation reported errors: %v\n", err)
 	}
 
-	fmt.Printf("\n%s\n", strings.Repeat("═", 50))
-	fmt.Printf("📈 Summary:\n")
-	fmt.Printf("   Total items: %d\n", total)
-	fmt.Printf("   Processed:   %d\n", stats.Processed)
-	fmt.Printf("   Failed:      %d\n", stats.Failed)
-	fmt.Printf("   Skipped:     %d\n", stats.Skipped)
-	fmt.Printf("%s\n", strings.Repeat("═", 50))
+	info("\n%s\n", strings.Repeat("═", 50))
+	info("📈 Summary:\n")
+	info("   Total items: %d\n", total)
+	info("   Processed:   %d\n", stats.Processed)
+	info("   Failed:      %d\n", stats.Failed)
+	info("   Skipped:     %d\n", stats.Skipped)
+	info("%s\n", strings.Repeat("═", 50))
 
 	if stats.Failed == 0 && err == nil {
-		fmt.Printf("\n✨ Success! All configurations saved.\n")
+		info("\n✨ Success! All configurations saved.\n")
 	} else {
-		fmt.Printf("\n⚠️  Completed with issues.\n")
+		info("\n⚠️  Completed with issues.\n")
 	}
 }
 
@@ -166,13 +170,12 @@ Examples:
 
   # From Pipe (STDIN)
   cat config.json | nbox-cli seed -`,
-	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Args: exactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// Prepare reader before starting Fx to validate input early
 		reader, desc, err := getInputReader(args[0])
 		if err != nil {
-			printError("Input validation", err)
-			os.Exit(1)
+			return usageErrorf("input: %w", err)
 		}
 
 		// Ensure file is closed if not STDIN
@@ -180,16 +183,19 @@ Examples:
 			defer func() { _ = closer.Close() }()
 		}
 
+		// fx.Invoke runs synchronously during Start, so seedErr is set by the
+		// time Start returns.
+		var seedErr error
 		app := fx.New(
 			fx.NopLogger,
 			bootstrap.CommonModules,
 			// Pass reader and description to Fx invokable
-			fx.Invoke(runSeed(reader, desc)),
+			fx.Invoke(runSeed(reader, desc, &seedErr)),
 		)
 
 		if err := app.Start(cmd.Context()); err != nil {
-			printError(err.Error(), err)
-			os.Exit(1)
+			return err
 		}
+		return seedErr
 	},
 }

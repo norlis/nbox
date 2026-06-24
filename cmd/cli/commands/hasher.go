@@ -51,31 +51,26 @@ Examples:
 
   # With custom bcrypt cost
   nbox-cli hasher admin --cost 12`,
-	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Args: exactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
 		username := strings.TrimSpace(args[0])
 		cost, _ := cmd.Flags().GetInt("cost")
 
 		if username == "" {
-			fmt.Println("❌ Error: Username cannot be empty")
-			os.Exit(1)
+			return usageErrorf("username cannot be empty")
 		}
 
 		// Validate cost
 		if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
-			fmt.Printf("❌ Error: cost must be between %d and %d\n", bcrypt.MinCost, bcrypt.MaxCost)
-			os.Exit(1)
+			return usageErrorf("cost must be between %d and %d", bcrypt.MinCost, bcrypt.MaxCost)
 		}
 
-		// Prompt for password
-		fmt.Printf("🔐 Enter password for user '%s' (leave empty to generate): ", username)
-
-		// Read password securely (hidden input)
+		// Prompt + hidden input are diagnostics → stderr.
+		info("🔐 Enter password for user '%s' (leave empty to generate): ", username)
 		passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Println() // New line after hidden input
+		infoln("") // New line after hidden input
 		if err != nil {
-			fmt.Printf("❌ Error: Failed to read password: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("read password: %w", err)
 		}
 
 		password := strings.TrimSpace(string(passwordBytes))
@@ -83,11 +78,10 @@ Examples:
 
 		// If password is empty, generate a secure one
 		if password == "" {
-			fmt.Println("🎲 Generating secure password...")
+			infoln("🎲 Generating secure password...")
 			password, err = generateSecurePassword(10)
 			if err != nil {
-				fmt.Printf("❌ Error: Failed to generate password: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("generate password: %w", err)
 			}
 			generatedPassword = true
 		}
@@ -95,8 +89,7 @@ Examples:
 		// Generate hash
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), cost)
 		if err != nil {
-			fmt.Printf("❌ Error: Failed to generate hash: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("generate hash: %w", err)
 		}
 
 		// Create credentials structure
@@ -113,25 +106,22 @@ Examples:
 		// Marshal to JSON with indentation
 		jsonOutput, err := json.MarshalIndent(credentials, "", "  ")
 		if err != nil {
-			fmt.Printf("❌ Error: Failed to generate JSON: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("generate JSON: %w", err)
 		}
 
-		// Display result
-		fmt.Println("\n✅ Credentials generated successfully!")
-
-		// Show generated password (important!)
+		// Banners + generated secret to stderr; the credentials JSON to stdout
+		// so `hasher admin > creds.json` captures only the pasteable payload.
+		infoln("\n✅ Credentials generated successfully!")
 		if generatedPassword {
-			fmt.Println(strings.Repeat("═", 70))
-			fmt.Printf("🔑 Generated Password: %s\n", password)
-			fmt.Println(strings.Repeat("═", 70))
-			fmt.Println("⚠️  IMPORTANT: Save this password! It won't be shown again.")
-			fmt.Println()
+			infoln(strings.Repeat("═", 70))
+			info("🔑 Generated Password: %s\n", password)
+			infoln(strings.Repeat("═", 70))
+			infoln("⚠️  IMPORTANT: Save this password! It won't be shown again.")
+			infoln("")
 		}
 
-		fmt.Println(strings.Repeat("═", 70))
-		fmt.Println(string(jsonOutput))
-		fmt.Println(strings.Repeat("═", 70))
+		outln(string(jsonOutput))
+		return nil
 	},
 }
 

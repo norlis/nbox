@@ -39,28 +39,27 @@ func tableName(cmd *cobra.Command) string {
 	return t
 }
 
-// withAdminStore runs a minimal fx app and hands over a ready AdminStore.
-func withAdminStore(ctx context.Context, cmd *cobra.Command, fn func(*config.AdminStore) error) {
+// withAdminStore runs a minimal fx app and hands a ready AdminStore to fn,
+// returning any error so the calling RunE maps it to an exit code. fx.Invoke
+// runs synchronously during Start, so opErr is set by the time Start returns.
+func withAdminStore(ctx context.Context, cmd *cobra.Command, fn func(*config.AdminStore) error) error {
 	table := tableName(cmd)
 	if table == "" {
-		printError("config", errors.New("set --table o NBOX_CONFIG_TABLE_NAME"))
-		os.Exit(1)
+		return usageErrorf("set --table o NBOX_CONFIG_TABLE_NAME")
 	}
+	var opErr error
 	app := fx.New(
 		fx.NopLogger,
 		bootstrap.CommonModules,
 		fx.Invoke(func(client *dynamodb.Client, sd fx.Shutdowner) {
 			defer func() { _ = sd.Shutdown() }()
-			if err := fn(config.NewAdminStore(client, table)); err != nil {
-				printError("config operation", err)
-				os.Exit(1)
-			}
+			opErr = fn(config.NewAdminStore(client, table))
 		}),
 	)
 	if err := app.Start(ctx); err != nil {
-		printError(err.Error(), err)
-		os.Exit(1)
+		return err
 	}
+	return opErr
 }
 
 // ---- user (basic auth) ----
@@ -97,13 +96,12 @@ func buildAppRole(roleID, name string, roles, cidrs []string, secretHash string,
 var configUserUpsertCmd = &cobra.Command{
 	Use:   "upsert",
 	Short: "Crear/actualizar un usuario (merge: solo cambia los flags provistos)",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		username, _ := cmd.Flags().GetString("username")
 		if username == "" {
-			printError("config user", errors.New("--username requerido"))
-			os.Exit(1)
+			return usageErrorf("--username requerido")
 		}
-		withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			// Merge onto the existing entity: only flags actually passed override
 			// it, so e.g. changing just the password preserves roles/status.
 			d := basicAuthData{Status: "active"}
@@ -136,7 +134,7 @@ var configUserUpsertCmd = &cobra.Command{
 			if err := s.Upsert(cmd.Context(), config.KeyBasicAuth.Kind, username, buildBasicAuthData(d.Password, d.Roles, d.Status), "nbox-cli"); err != nil {
 				return err
 			}
-			fmt.Printf("[ok] user %q guardado (roles=%v status=%s)\n", username, d.Roles, d.Status)
+			info("[ok] user %q guardado (roles=%v status=%s)\n", username, d.Roles, d.Status)
 			return nil
 		})
 	},
@@ -145,8 +143,8 @@ var configUserUpsertCmd = &cobra.Command{
 var configUserListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Listar usuarios de basic auth (sin exponer hashes)",
-	Run: func(cmd *cobra.Command, args []string) {
-		withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			recs, err := s.List(cmd.Context(), config.KeyBasicAuth.Kind)
 			if err != nil {
 				return err
@@ -154,7 +152,7 @@ var configUserListCmd = &cobra.Command{
 			for _, r := range recs {
 				var d basicAuthData
 				_ = json.Unmarshal([]byte(r.Data), &d)
-				fmt.Printf("- %-20s roles=%v status=%s updated=%s\n", r.ID, d.Roles, d.Status, r.UpdatedAt)
+				out("- %-20s roles=%v status=%s updated=%s\n", r.ID, d.Roles, d.Status, r.UpdatedAt)
 			}
 			return nil
 		})
@@ -164,12 +162,15 @@ var configUserListCmd = &cobra.Command{
 var configUserRmCmd = &cobra.Command{
 	Use:   "rm [username]",
 	Short: "Borrar un usuario de basic auth",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+	Args:  exactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			return s.Delete(cmd.Context(), config.KeyBasicAuth.Kind, args[0])
-		})
-		fmt.Printf("[ok] user %q borrado\n", args[0])
+		}); err != nil {
+			return err
+		}
+		info("[ok] user %q borrado\n", args[0])
+		return nil
 	},
 }
 
@@ -178,13 +179,12 @@ var configUserRmCmd = &cobra.Command{
 var configAwsStsUpsertCmd = &cobra.Command{
 	Use:   "upsert",
 	Short: "Crear/actualizar un mapeo ARN (merge: solo cambia los flags provistos)",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		arn, _ := cmd.Flags().GetString("arn")
 		if arn == "" {
-			printError("config aws-sts", errors.New("--arn requerido (forma canónica iam role)"))
-			os.Exit(1)
+			return usageErrorf("--arn requerido (forma canónica iam role)")
 		}
-		withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			// Merge onto the existing mapping: only passed flags override it.
 			m := awssts.ARNMapping{ARN: arn, Status: awssts.StatusActive}
 			cur, err := s.Get(cmd.Context(), config.KeyARNMap.Kind, arn)
@@ -209,7 +209,7 @@ var configAwsStsUpsertCmd = &cobra.Command{
 			if err := s.Upsert(cmd.Context(), config.KeyARNMap.Kind, arn, data, "nbox-cli"); err != nil {
 				return err
 			}
-			fmt.Printf("[ok] arn %q guardado (roles=%v status=%s)\n", arn, m.Roles, m.Status)
+			info("[ok] arn %q guardado (roles=%v status=%s)\n", arn, m.Roles, m.Status)
 			return nil
 		})
 	},
@@ -218,8 +218,8 @@ var configAwsStsUpsertCmd = &cobra.Command{
 var configAwsStsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Listar mapeos ARN",
-	Run: func(cmd *cobra.Command, args []string) {
-		withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			recs, err := s.List(cmd.Context(), config.KeyARNMap.Kind)
 			if err != nil {
 				return err
@@ -227,7 +227,7 @@ var configAwsStsListCmd = &cobra.Command{
 			for _, r := range recs {
 				var m awssts.ARNMapping
 				_ = json.Unmarshal([]byte(r.Data), &m)
-				fmt.Printf("- %-50s name=%s roles=%v status=%s\n", r.ID, m.Name, m.Roles, m.Status)
+				out("- %-50s name=%s roles=%v status=%s\n", r.ID, m.Name, m.Roles, m.Status)
 			}
 			return nil
 		})
@@ -237,12 +237,15 @@ var configAwsStsListCmd = &cobra.Command{
 var configAwsStsRmCmd = &cobra.Command{
 	Use:   "rm [arn]",
 	Short: "Borrar un mapeo ARN",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+	Args:  exactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			return s.Delete(cmd.Context(), config.KeyARNMap.Kind, args[0])
-		})
-		fmt.Printf("[ok] arn %q borrado\n", args[0])
+		}); err != nil {
+			return err
+		}
+		info("[ok] arn %q borrado\n", args[0])
+		return nil
 	},
 }
 
@@ -251,39 +254,44 @@ var configAwsStsRmCmd = &cobra.Command{
 var configApproleGenerateCmd = &cobra.Command{
 	Use:   "generate",
 	Short: "Generar y persistir un AppRole (role_id + secret_id)",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")
 		roles, _ := cmd.Flags().GetStringSlice("roles")
 		cidrs, _ := cmd.Flags().GetStringSlice("cidrs")
 		cost, _ := cmd.Flags().GetInt("cost")
 		if name == "" {
-			printError("config approle", errors.New("--name requerido"))
-			os.Exit(1)
+			return usageErrorf("--name requerido")
+		}
+		if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
+			return usageErrorf("cost must be between %d and %d", bcrypt.MinCost, bcrypt.MaxCost)
 		}
 		roleID := uuid.NewString()
 		secretID := uuid.NewString()
 		hash, err := bcrypt.GenerateFromPassword([]byte(secretID), cost)
 		if err != nil {
-			printError("bcrypt", err)
-			os.Exit(1)
+			return fmt.Errorf("bcrypt: %w", err)
 		}
 		data := buildAppRole(roleID, name, roles, cidrs, string(hash), time.Now().UTC())
-		withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			return s.Upsert(cmd.Context(), config.KeyAppRole.Kind, roleID, data, "nbox-cli")
-		})
-		fmt.Println(strings.Repeat("=", 70))
-		fmt.Printf("role_id:    %s\n", roleID)
-		fmt.Printf("secret_id:  %s\n", secretID)
-		fmt.Println(strings.Repeat("=", 70))
-		fmt.Println("Distribuí el secret_id por canal seguro. NO se vuelve a mostrar.")
+		}); err != nil {
+			return err
+		}
+		// Credentials + guidance are diagnostics (and a secret) → stderr.
+		infoln(strings.Repeat("=", 70))
+		info("role_id:    %s\n", roleID)
+		info("secret_id:  %s\n", secretID)
+		infoln(strings.Repeat("=", 70))
+		infoln("Distribuí el secret_id por canal seguro. NO se vuelve a mostrar.")
+		return nil
 	},
 }
 
 var configApproleListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "Listar AppRoles (sin exponer secret_hashes)",
-	Run: func(cmd *cobra.Command, args []string) {
-		withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			recs, err := s.List(cmd.Context(), config.KeyAppRole.Kind)
 			if err != nil {
 				return err
@@ -291,7 +299,7 @@ var configApproleListCmd = &cobra.Command{
 			for _, r := range recs {
 				var role approle.Role
 				_ = json.Unmarshal([]byte(r.Data), &role)
-				fmt.Printf("- %s name=%s roles=%v hashes=%d status=%s\n",
+				out("- %s name=%s roles=%v hashes=%d status=%s\n",
 					role.ID, role.Name, role.Roles, len(role.SecretHashes), role.Status)
 			}
 			return nil
@@ -302,12 +310,15 @@ var configApproleListCmd = &cobra.Command{
 var configApproleRmCmd = &cobra.Command{
 	Use:   "rm [role_id]",
 	Short: "Borrar un AppRole",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+	Args:  exactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			return s.Delete(cmd.Context(), config.KeyAppRole.Kind, args[0])
-		})
-		fmt.Printf("[ok] approle %q borrado\n", args[0])
+		}); err != nil {
+			return err
+		}
+		info("[ok] approle %q borrado\n", args[0])
+		return nil
 	},
 }
 

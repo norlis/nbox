@@ -11,11 +11,8 @@ import (
 // Config holds publisher tuning. Loaded once via LoadConfig() in main.go.
 type Config struct {
 	// Enabled controls whether nbox emits events at all. When false, New
-	// returns a NoopPublisher regardless of Topic.
+	// returns a NoopPublisher regardless of other settings.
 	Enabled bool `env:"NBOX_EVENT_PUBLISH" envDefault:"true"`
-
-	// Topic is the SNS topic name or full ARN. Required when Enabled is true.
-	Topic string `env:"NBOX_EVENT_TOPIC"`
 
 	// Source is the CloudEvent Source attribute. Defaults to "nbox".
 	Source string `env:"NBOX_EVENT_SOURCE" envDefault:"nbox"`

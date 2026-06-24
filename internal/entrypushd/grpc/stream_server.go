@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	streamv1 "nbox/gen/stream/v1"
@@ -33,6 +34,7 @@ type StreamServer struct {
 	broker   *Broker
 	snapshot Snapshotter // nil => snapshot disabled (deltas only)
 	logger   *slog.Logger
+	sf       singleflight.Group // dedupes concurrent same-event vault resolves
 }
 
 // NewStreamServer builds a StreamServer backed by the given Broker. If
@@ -98,11 +100,17 @@ func (s *StreamServer) Watch(req *streamv1.WatchRequest, stream streamv1.KVStrea
 				return nil
 			}
 			if pub != nil && evt.Type == string(event.EntryUpserted) && isVaultKey(evt.Subject) {
-				sealed, err := s.sealFor(stream.Context(), evt.Subject, token, pub)
+				plaintext, err := s.resolveOnce(stream.Context(), evt.Id, token, evt.Subject)
+				if err != nil {
+					s.logger.Error("vault resolve failed on delta, failing closed", slog.String("key", evt.Subject), slog.Any("error", err))
+					return status.Errorf(codes.Unavailable, "vault resolve failed: %v", err)
+				}
+				sealed, err := s.sealValue(evt.Subject, plaintext, pub)
 				if err != nil {
 					s.logger.Error("vault seal failed on delta, failing closed", slog.String("key", evt.Subject), slog.Any("error", err))
 					return status.Errorf(codes.Unavailable, "vault seal failed: %v", err)
 				}
+				sealed.TimeUnixMs = evt.TimeUnixMs // preserve ingress time across the reseal
 				evt = sealed
 			}
 			if err := stream.Send(evt); err != nil {
@@ -164,13 +172,20 @@ const vaultPrefix = "passbox/"
 func isVaultKey(subject string) bool { return strings.HasPrefix(subject, vaultPrefix) }
 
 // sealFor resolves a vault key's plaintext and seals it to pub, returning
-// an EntryUpserted event carrying the HPKE ciphertext. Fail-closed: any
-// resolve/seal error is returned to the caller (which aborts Watch).
+// an EntryUpserted event carrying the HPKE ciphertext. Used by the snapshot
+// (per key). The delta path uses resolveOnce + sealValue instead. Fail-closed:
+// any resolve/seal error is returned to the caller (which aborts Watch).
 func (s *StreamServer) sealFor(ctx context.Context, subject, token string, pub *ecdh.PublicKey) (*streamv1.Event, error) {
 	plaintext, err := s.snapshot.Resolve(ctx, token, subject)
 	if err != nil {
 		return nil, err
 	}
+	return s.sealValue(subject, plaintext, pub)
+}
+
+// sealValue HPKE-seals an already-resolved plaintext to pub, returning an
+// EntryUpserted event carrying the ciphertext.
+func (s *StreamServer) sealValue(subject, plaintext string, pub *ecdh.PublicKey) (*streamv1.Event, error) {
 	sealed, err := vault.Seal(pub, subject, []byte(plaintext))
 	if err != nil {
 		return nil, err
@@ -183,4 +198,18 @@ func (s *StreamServer) sealFor(ctx context.Context, subject, token string, pub *
 		Data:       sealed,
 		Extensions: map[string]string{"encrypted": "hpke", "suite_id": "1", "key_fpr": vault.Fingerprint(pub)},
 	}, nil
+}
+
+// resolveOnce resolves a vault key's plaintext, deduping the N per-subscriber
+// goroutines that process the SAME broadcast event via singleflight (key =
+// eventID|subject). First caller resolves; the rest share the result; the key
+// is forgotten after. A new event id resolves fresh (no cross-event cache).
+func (s *StreamServer) resolveOnce(ctx context.Context, eventID, token, subject string) (string, error) {
+	v, err, _ := s.sf.Do(eventID+"|"+subject, func() (any, error) {
+		return s.snapshot.Resolve(ctx, token, subject)
+	})
+	if err != nil {
+		return "", err
+	}
+	return v.(string), nil
 }

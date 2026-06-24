@@ -46,7 +46,7 @@ NBOX se compone de **dos servicios** y una **CLI** de administración:
 | Componente | Qué es | Puerto |
 |---|---|---|
 | **`nbox`** | Microservicio HTTP: API REST de entries, templates (box), export, tracking y auth (JWT/Basic + OPA). | `7337` |
-| **`entrypushd`** | Consumer SQS + servidor gRPC (`KVStream/Watch`): empuja cambios a **agentes** en tiempo real, con auth M2M (AppRole / AWS-STS) y entrega **HPKE** para secretos vault. | `9337` |
+| **`entrypushd`** | Subscriber NATS + servidor gRPC (`KVStream/Watch`): empuja cambios a **agentes** en tiempo real, con auth M2M (AppRole / AWS-STS) y entrega **HPKE** para secretos vault. | `9337` |
 | **`nbox-cli`** | Tooling de administración: hashes, credenciales M2M, seed y config dinámica. | — |
 
 **Almacenamiento:** DynamoDB (entries / config / tracking), Parameter Store + KMS (secretos), S3 (templates).
@@ -251,6 +251,7 @@ La configuración es por **variable de entorno**, separada por binario. Todas se
 | `AWS_REGION`      | Región AWS (la consume el SDK de AWS).                   | _(entorno AWS)_ |
 | `NBOX_CONFIG_TABLE_NAME` | Tabla DynamoDB de config dinámica de auth (vacío ⇒ solo env). | _(vacío)_ |
 | `NBOX_CONFIG_TTL` | Intervalo de refresh de la caché de config.              | `45s`         |
+| `NATS_URL`        | URL del server NATS (bus de eventos fan-out).            | `nats://localhost:4222` |
 
 > `NBOX_CONFIG_TABLE_NAME`/`NBOX_CONFIG_TTL` habilitan resolver
 > `NBOX_BASIC_AUTH_CREDENTIALS`, `NBOX_APPROLE_ROLES` y `NBOX_AWS_ARN_MAP` desde
@@ -276,12 +277,11 @@ La configuración es por **variable de entorno**, separada por binario. Todas se
 | `INSTANCE_NAME`                     | Nombre de instancia (prefijo de los archivos de export).                    | `nbox`                                      |
 | `NBOX_CSRF_TRUSTED_ORIGINS`         | Orígenes de browser confiables para CSRF (CSV `scheme://host[:port]`).      | _(vacío)_                                   |
 
-Eventos (publisher SNS, solo en `nbox`):
+Eventos (publisher NATS, solo en `nbox`):
 
 | Variable                       | Descripción                                                        | Default |
 |--------------------------------|--------------------------------------------------------------------|---------|
 | `NBOX_EVENT_PUBLISH`           | Habilita la publicación de eventos.                                | `true`  |
-| `NBOX_EVENT_TOPIC`             | ARN/nombre del topic SNS. **Requerido si** `NBOX_EVENT_PUBLISH=true`. | _(vacío)_ |
 | `NBOX_EVENT_SOURCE`            | `source` del CloudEvent emitido.                                   | `nbox`  |
 | `NBOX_EVENT_MAX_ATTEMPTS`      | Reintentos de publicación.                                         | `3`     |
 | `NBOX_EVENT_INITIAL_BACKOFF`   | Backoff inicial entre reintentos.                                  | `100ms` |
@@ -294,8 +294,6 @@ Eventos (publisher SNS, solo en `nbox`):
 | Variable                  | Descripción                                                                          | Default       |
 |---------------------------|--------------------------------------------------------------------------------------|---------------|
 | `HMAC_SECRET_KEY`         | Clave HMAC para verificar/firmar JWT M2M. **Requerido**; **debe coincidir** con nbox.| _(requerido)_ |
-| `ENTRYPUSHD_QUEUE`        | Nombre o URL de la cola SQS. **Requerido**.                                          | _(requerido)_ |
-| `ENTRYPUSHD_WORKERS`      | Nº de workers del consumer SQS.                                                      | `2`           |
 | `ENTRYPUSHD_GRPC_LISTEN`  | Dirección de bind del servidor gRPC (`KVStream/Watch`).                              | `:9337`       |
 | `NBOX_APPROLE_ROLES`      | JSON array de definiciones AppRole. Vacío ⇒ rechaza toda autenticación.              | _(vacío)_     |
 | `NBOX_AWS_ARN_MAP`        | JSON array de mapeos ARN para el esquema AWS-STS. Vacío ⇒ deshabilita AWS-STS.       | _(vacío)_     |
@@ -375,9 +373,24 @@ nbox-cli config approle rm <role_id>
 ## Deployment
 
 ### build docker
+
+Hay dos imágenes (targets del Dockerfile): `nbox` y `entrypushd`. **La arquitectura
+de la imagen debe coincidir con `runtimePlatform.cpuArchitecture` del task de ECS**
+(si no: `exec format error` al arrancar). El binario se compila para la `--platform`
+que pases (en Apple Silicon, sin `--platform`, sale **arm64**).
+
 ```bash
-docker buildx build --platform=linux/amd64 --target production -t nbox:1  --progress=plain .
+# amd64 / X86_64 (default de Fargate)
+docker buildx build --platform linux/amd64 --target nbox       -t <ecr>/nbox:1       --push .
+docker buildx build --platform linux/amd64 --target entrypushd -t <ecr>/entrypushd:1 --push .
+
+# arm64 / Graviton (task con cpuArchitecture: ARM64)
+docker buildx build --platform linux/arm64 --target nbox       -t <ecr>/nbox:1       --push .
+docker buildx build --platform linux/arm64 --target entrypushd -t <ecr>/entrypushd:1 --push .
 ```
+
+Verificá la arquitectura de la imagen: `docker image inspect <img> --format '{{.Architecture}}'`
+— debe ser igual al `cpuArchitecture` del task definition.
 
 ### example credentials
 
@@ -416,7 +429,7 @@ flowchart LR
     end
 
     subgraph EPS["entrypushd · :9337"]
-        SQSC["SQS consumer"]
+        NATSC["evento"]
         GRPC["gRPC KVStream/Watch<br/>M2M (AppRole / AWS-STS)<br/>HPKE para vault"]
     end
 
@@ -424,13 +437,13 @@ flowchart LR
         DDB[("DynamoDB<br/>entries · config · tracking")]
         SSM[("Parameter Store + KMS<br/>secretos")]
         S3[("S3<br/>templates")]
-        BUS(("SNS → SQS"))
+        BUS(("NATS<br/>fan-out"))
     end
 
     HUMAN --> AUTH --> DOM
     ADMIN -. escribe .-> DDB
     DOM --> DDB & SSM & S3
-    DOM -- cambios --> BUS --> SQSC --> GRPC
+    DOM -- cambios --> BUS --> NATSC --> GRPC
     AGENT --> GRPC
     GRPC -. snapshot HTTP .-> DOM
     DDB -. config dinámica .-> AUTH & GRPC
@@ -439,7 +452,7 @@ flowchart LR
     classDef svc fill:#E3F2FD,stroke:#1976D2,color:#000
     classDef aws fill:#232F3E,stroke:#FF9900,color:#fff
     class HUMAN,AGENT,ADMIN client
-    class AUTH,DOM,SQSC,GRPC svc
+    class AUTH,DOM,NATSC,GRPC svc
     class DDB,SSM,S3,BUS aws
 ```
 
@@ -450,7 +463,7 @@ NBOX is organized using **Package-Oriented Design** combined with **Clean Archit
 ```
 cmd/
   nbox/          → HTTP API binary (fx wiring only)
-  entrypushd/    → SQS consumer + gRPC daemon (fx wiring only)
+  entrypushd/    → NATS subscriber + gRPC daemon (fx wiring only)
   cli/           → admin CLI (hasher, approle, seed, config)
 
 internal/
@@ -513,7 +526,8 @@ examples/        → gRPC client examples (Python / Go / shell)
 
 `entrypushd` expone un stream gRPC server-streaming (`stream.v1.KVStream/Watch`,
 puerto `9337`) para que **agentes/servicios** se suscriban a cambios de entries en
-tiempo real (eventos que llegan vía SQS y se hacen broadcast).
+tiempo real — eventos que nbox publica a **NATS** y que **todas** las instancias
+reciben (fan-out).
 
 **Autenticación M2M.** El agente presenta una credencial en la metadata gRPC
 `authorization: <scheme> <base64(...)>`; el interceptor la valida, mintea un JWT

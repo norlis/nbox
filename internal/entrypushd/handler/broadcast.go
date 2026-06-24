@@ -1,14 +1,16 @@
 // Package handler hosts the per-message handlers used by the entrypushd
-// SQS consumer.
+// event consumer.
 package handler
 
 import (
 	"fmt"
 	"log/slog"
+	"time"
 
-	eventd "github.com/norlis/event-driven/pkg/event"
 	streamv1 "nbox/gen/stream/v1"
 	"nbox/internal/event"
+
+	eventd "github.com/norlis/event-driven/pkg/event"
 )
 
 // Publisher is the subset of the gRPC broker the handler depends on.
@@ -17,7 +19,7 @@ type Publisher interface {
 	Publish(e *streamv1.Event)
 }
 
-// Broadcast receives an *event.Message from the SQS consumer, filters by
+// Broadcast receives an *event.Message from the event consumer, filters by
 // CloudEvent type, maps the message to a streamv1.Event, and forwards it
 // to the broker. The Ack/Nack lifecycle is the caller's responsibility.
 type Broadcast struct {
@@ -82,7 +84,7 @@ func toProtoEvent(msg *eventd.Message) *streamv1.Event {
 		Type:       msg.Type(),
 		Source:     msg.Source(),
 		Subject:    msg.Subject(),
-		TimeUnixMs: msg.Time().UnixMilli(),
+		TimeUnixMs: time.Now().UnixMilli(), // TimeUnixMs: msg.Time().UnixMilli()
 		Data:       msg.Data(),
 		Extensions: exts,
 	}

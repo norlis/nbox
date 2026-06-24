@@ -51,11 +51,9 @@ func main() {
 		fx.WithLogger(func(l *zap.Logger) fxevent.Logger {
 			return &fxevent.ZapLogger{Logger: l.WithOptions(zap.IncreaseLevel(zapcore.WarnLevel))}
 		}),
-		// entrypushd only needs the AWS SDK config + Identity (for the SQS
-		// subscriber's caller-identity resolution) and the SQS client. No
-		// S3/DynamoDB/SSM/SNS — those are nbox-specific.
+		// entrypushd needs the AWS SDK config (for AWS STS auth) and DynamoDB
+		// (for the dynamic-config table). No SQS — events now arrive via NATS.
 		platformaws.CoreModule,
-		platformaws.SQSModule,
 		platformaws.DynamoDBModule,
 		entrypushd.Module,
 	)

@@ -15,12 +15,6 @@ type Config struct {
 	// --- Shared base (embedded) ---
 	config.Base
 
-	// Queue is the SQS queue name or URL. Required.
-	Queue string `env:"ENTRYPUSHD_QUEUE" required:"true"`
-
-	// Workers is the SQS subscriber's ConsumeWorkers count.
-	Workers int `env:"ENTRYPUSHD_WORKERS" envDefault:"2"`
-
 	// GRPCListen is the listen address for the gRPC server (KVStream/Watch).
 	// Default ":9337".
 	GRPCListen string `env:"ENTRYPUSHD_GRPC_LISTEN" envDefault:":9337"`

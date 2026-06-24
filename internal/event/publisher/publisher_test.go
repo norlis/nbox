@@ -26,9 +26,9 @@ func (c *captureInner) Publish(ce cloudevents.Event) error {
 	return c.err
 }
 
-func TestSNSPublisher_MapsAllCEAttributes(t *testing.T) {
+func TestPublisher_MapsAllCEAttributes(t *testing.T) {
 	inner := &captureInner{}
-	p := &SNSPublisher{
+	p := &Publisher{
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
@@ -59,9 +59,9 @@ func TestSNSPublisher_MapsAllCEAttributes(t *testing.T) {
 	require.Equal(t, "development", ce.Extensions()["prefix"])
 }
 
-func TestSNSPublisher_PublishesMultipleEvents(t *testing.T) {
+func TestPublisher_PublishesMultipleEvents(t *testing.T) {
 	inner := &captureInner{}
-	p := &SNSPublisher{
+	p := &Publisher{
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
@@ -77,10 +77,10 @@ func TestSNSPublisher_PublishesMultipleEvents(t *testing.T) {
 	require.Equal(t, "nbox.entry.deleted", inner.seen[1].Type())
 }
 
-func TestSNSPublisher_ReturnsFirstError(t *testing.T) {
+func TestPublisher_ReturnsFirstError(t *testing.T) {
 	boom := errors.New("boom")
 	inner := &captureInner{err: boom}
-	p := &SNSPublisher{
+	p := &Publisher{
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
@@ -92,9 +92,9 @@ func TestSNSPublisher_ReturnsFirstError(t *testing.T) {
 	require.ErrorIs(t, err, boom)
 }
 
-func TestSNSPublisher_PrefixForEmptyKey(t *testing.T) {
+func TestPublisher_PrefixForEmptyKey(t *testing.T) {
 	inner := &captureInner{}
-	p := &SNSPublisher{
+	p := &Publisher{
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
@@ -126,9 +126,9 @@ func (f *flakyInner) Publish(ce cloudevents.Event) error {
 	return nil
 }
 
-func TestSNSPublisher_RetriesOnTransientError(t *testing.T) {
+func TestPublisher_RetriesOnTransientError(t *testing.T) {
 	inner := &flakyInner{failN: 2}
-	p := newTestSNSPublisher(inner, 3)
+	p := newTestPublisher(inner, 3)
 
 	e := event.Event{Type: event.EntryUpserted, TransactionId: "t", Timestamp: time.Now(), Payload: json.RawMessage(`{"Key":"a"}`)}
 	require.NoError(t, p.Publish(context.Background(), e))
@@ -136,9 +136,9 @@ func TestSNSPublisher_RetriesOnTransientError(t *testing.T) {
 	require.Len(t, inner.seen, 1)
 }
 
-func TestSNSPublisher_GivesUpAfterMaxAttempts(t *testing.T) {
+func TestPublisher_GivesUpAfterMaxAttempts(t *testing.T) {
 	inner := &flakyInner{failN: 100} // always fails
-	p := newTestSNSPublisher(inner, 3)
+	p := newTestPublisher(inner, 3)
 
 	e := event.Event{Type: event.EntryUpserted, TransactionId: "t", Timestamp: time.Now(), Payload: json.RawMessage(`{"Key":"a"}`)}
 	err := p.Publish(context.Background(), e)
@@ -156,11 +156,11 @@ func (c *countingInner) Publish(_ cloudevents.Event) error {
 	return nil
 }
 
-// TestSNSPublisher_NoRetry_CallsInnerOnce verifies that with maxAttempts<=1
+// TestPublisher_NoRetry_CallsInnerOnce verifies that with maxAttempts<=1
 // the fast path is taken and the inner publisher is invoked exactly once on success.
-func TestSNSPublisher_NoRetry_CallsInnerOnce(t *testing.T) {
+func TestPublisher_NoRetry_CallsInnerOnce(t *testing.T) {
 	inner := &countingInner{}
-	p := &SNSPublisher{
+	p := &Publisher{
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
@@ -177,12 +177,12 @@ func TestSNSPublisher_NoRetry_CallsInnerOnce(t *testing.T) {
 	require.Equal(t, 1, inner.calls, "inner must be called exactly once when maxAttempts=1")
 }
 
-// TestSNSPublisher_NoRetry_ReturnsErrorOnFailure verifies that with maxAttempts<=1
+// TestPublisher_NoRetry_ReturnsErrorOnFailure verifies that with maxAttempts<=1
 // a failure from the inner publisher is propagated and inner is called exactly once.
-func TestSNSPublisher_NoRetry_ReturnsErrorOnFailure(t *testing.T) {
+func TestPublisher_NoRetry_ReturnsErrorOnFailure(t *testing.T) {
 	boom := errors.New("boom")
 	inner := &captureInner{err: boom}
-	p := &SNSPublisher{
+	p := &Publisher{
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
@@ -201,8 +201,8 @@ func TestSNSPublisher_NoRetry_ReturnsErrorOnFailure(t *testing.T) {
 	require.Len(t, inner.seen, 1, "inner must be called exactly once when maxAttempts=1")
 }
 
-func newTestSNSPublisher(inner innerPublisher, maxAttempts int) *SNSPublisher {
-	return &SNSPublisher{
+func newTestPublisher(inner innerPublisher, maxAttempts int) *Publisher {
+	return &Publisher{
 		inner:          inner,
 		source:         "nbox",
 		maxAttempts:    maxAttempts,
@@ -212,18 +212,18 @@ func newTestSNSPublisher(inner innerPublisher, maxAttempts int) *SNSPublisher {
 	}
 }
 
-// TestSNSPublisher_ExhaustedRetries_DoesNotLogPayload verifies that when all
+// TestPublisher_ExhaustedRetries_DoesNotLogPayload verifies that when all
 // retry attempts are exhausted the error log does NOT contain the event
 // payload — preventing secret exfiltration to log backends (e.g. CloudWatch).
-func TestSNSPublisher_ExhaustedRetries_DoesNotLogPayload(t *testing.T) {
+func TestPublisher_ExhaustedRetries_DoesNotLogPayload(t *testing.T) {
 	const secretMarker = "SUPER_SECRET_VALUE"
 
 	// Observer captures every zap log entry written during the test.
 	core, logs := observer.New(zap.ErrorLevel)
 	observedLogger := zap.New(core)
 
-	inner := &captureInner{err: errors.New("sns unavailable")}
-	p := &SNSPublisher{
+	inner := &captureInner{err: errors.New("nats unavailable")}
+	p := &Publisher{
 		inner:          inner,
 		source:         "nbox",
 		maxAttempts:    1,

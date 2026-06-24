@@ -23,19 +23,22 @@ entrypushd re-seals the snapshot to it).
     export NBOX_AUTH=aws-sts
     uv run watch.py
 
-Env: NBOX_GRPC (default localhost:9337), NBOX_AUTH (approle|aws-sts, default approle).
+Env: NBOX_GRPC (default localhost:9337), NBOX_AUTH (approle|aws-sts, default approle),
+NBOX_GRPC_TLS (true|false; auto-on for :443, e.g. behind an ALB).
 """
 
 import base64
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, Protocol
+from typing import Any, Protocol
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
@@ -43,10 +46,30 @@ from pyhpke import AEADId, CipherSuite, KDFId, KEMId, KEMKey
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
+    format="%(asctime)s.%(msecs)03d %(levelname)s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("watch")
+
+_TS_RE = re.compile(r"ts=(\d+)")
+
+
+def _lat_cols(value: object, server_ms: int) -> str:
+    """Latency columns for load-test payloads (values carrying a `ts=` token):
+      lat_ms = bus latency (now - server publish time `time_unix_ms`)
+      e2e_ms = end-to-end  (now - client `ts`; includes the durable write)
+    Returns '' for normal values, so non-load-test output is unchanged."""
+    if not isinstance(value, str):
+        return ""
+    m = _TS_RE.search(value)
+    if not m:
+        return ""
+    now = int(time.time() * 1000)
+    cols = ""
+    if isinstance(server_ms, int) and server_ms > 0:
+        cols += f" lat_ms={now - server_ms}"
+    cols += f" e2e_ms={now - int(m.group(1))}"
+    return cols
 
 # HPKE suite v1 (must match the server).
 _KEM, _KDF, _AEAD = KEMId.DHKEM_X25519_HKDF_SHA256, KDFId.HKDF_SHA256, AEADId.AES256_GCM
@@ -64,13 +87,20 @@ class AppConfig:
     grpc_target: str
     prefixes: list[str]
     auth_method: str
+    tls: bool
 
     @classmethod
     def from_env(cls, args: list[str]) -> "AppConfig":
+        target = os.environ.get("NBOX_GRPC", "localhost:9337")
+        # TLS auto-detected for :443 (e.g. behind an ALB); override with
+        # NBOX_GRPC_TLS=true|false.
+        tls_env = os.environ.get("NBOX_GRPC_TLS")
+        tls = tls_env.lower() == "true" if tls_env else target.endswith(":443")
         return cls(
-            grpc_target=os.environ.get("NBOX_GRPC", "localhost:9337"),
+            grpc_target=target,
             prefixes=args or ["passbox/"],
             auth_method=os.environ.get("NBOX_AUTH", "approle"),
+            tls=tls,
         )
 
 
@@ -162,10 +192,12 @@ class HpkeDecryptor:
         return rctx.open(ct).decode("utf-8")
 
 
-def decode_event(evt: Any, decryptor: HpkeDecryptor) -> tuple[str, str, str]:
-    """Map a stream Event to (type, subject, value), decrypting vault payloads."""
-    is_hpke = dict(evt.extensions).get("encrypted") == "hpke"
-    return evt.type, evt.subject, decryptor.decrypt(evt.subject, evt.data, is_hpke)
+def decode_event(evt: Any, decryptor: HpkeDecryptor) -> tuple[str, str, str, int]:
+    """Map a stream Event to (type, subject, value, server_publish_ms),
+    decrypting vault payloads. `time_unix_ms` is the server publish time."""
+    is_hpke = evt.extensions.get("encrypted") == "hpke"
+    value = decryptor.decrypt(evt.subject, evt.data, is_hpke)
+    return evt.type, evt.subject, value, evt.time_unix_ms
 
 
 def env_name(subject: str) -> str:
@@ -225,10 +257,19 @@ class NboxClient:
             ("x-vault-instance-nonce", "watch-py"),
         ]
 
-    def _stream(self, stub: Any) -> Iterator[tuple[str, str, str]]:
+    def _stream(self, stub: Any) -> Iterator[tuple[str, str, str, int]]:
         req = self._pb.WatchRequest(prefixes=self.config.prefixes)
         for evt in stub.Watch(req, metadata=self._metadata()):
             yield decode_event(evt, self._decryptor)
+
+    def _channel(self) -> Any:
+        # TLS for :443/ALB (system root CAs; ACM certs are publicly trusted),
+        # plaintext h2c otherwise (local entrypushd).
+        if self.config.tls:
+            return self._grpc.secure_channel(
+                self.config.grpc_target, self._grpc.ssl_channel_credentials()
+            )
+        return self._grpc.insecure_channel(self.config.grpc_target)
 
     def run(self) -> None:
         """Stream forever, reconnecting on transient failures.
@@ -240,11 +281,11 @@ class NboxClient:
         backoff = MIN_BACKOFF
         while True:
             try:
-                with self._grpc.insecure_channel(self.config.grpc_target) as ch:
+                with self._channel() as ch:
                     stub = self._pbg.KVStreamStub(ch)
-                    for evt_type, subject, value in self._stream(stub):
+                    for evt_type, subject, value, server_ms in self._stream(stub):
                         backoff = MIN_BACKOFF  # healthy stream → reset
-                        logger.info("[%s] %s = %r  (%s)", evt_type, subject, value, env_name(subject))
+                        logger.info("[%s] %s = %r  (%s)%s", evt_type, subject, value, env_name(subject), _lat_cols(value, server_ms))
                 logger.info("stream closed by server; reconnecting…")
             except self._grpc.RpcError as e:
                 if is_terminal(e.code()):
@@ -273,8 +314,9 @@ def main() -> None:
         logger.error("%s", e)
         sys.exit(1)
 
-    logger.info("watching %s on %s via %s (Ctrl-C to stop)",
-                config.prefixes, config.grpc_target, config.auth_method)
+    logger.info("watching %s on %s (%s) via %s (Ctrl-C to stop)",
+                config.prefixes, config.grpc_target,
+                "tls" if config.tls else "plaintext", config.auth_method)
     try:
         NboxClient(config, authorizer, decryptor, grpc, pb, pbg).run()
     except KeyboardInterrupt:

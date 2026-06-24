@@ -7,7 +7,7 @@ import (
 	"nbox/internal/event"
 )
 
-// NoopPublisher is used in dev/local when no SNS topic is configured.
+// NoopPublisher is used when event publishing is disabled (NBOX_EVENT_PUBLISH=false).
 // It accepts events and logs them at debug level.
 type NoopPublisher struct {
 	logger *zap.Logger

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	natsgo "github.com/nats-io/nats.go"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 	"go.uber.org/zap"
@@ -19,10 +20,12 @@ import (
 	"nbox/internal/config"
 	"nbox/internal/entry"
 	entrystore "nbox/internal/entry/store"
+	event "nbox/internal/event"
 	"nbox/internal/event/publisher"
 	"nbox/internal/export"
 	"nbox/internal/nbox"
 	platformaws "nbox/internal/platform/aws"
+	"nbox/internal/platform/natsbus"
 	"nbox/internal/prefix"
 	prefixstore "nbox/internal/prefix/store"
 	"nbox/internal/tracking"
@@ -53,6 +56,32 @@ N::::::N        N::::::NB::::::::::::::::B     OO:::::::::OO   X:::::X       X::
 NNNNNNNN         NNNNNNNBBBBBBBBBBBBBBBBB        OOOOOOOOO     XXXXXXX       XXXXXXX
 
 `
+
+// eventModule wires the event publisher. The flag is read eagerly (outside fx)
+// because it decides which providers exist: when disabled the *natsgo.Conn
+// provider is omitted, so fx never dials NATS. fx.Private keeps the conn scoped
+// to this module.
+func eventModule(pubCfg publisher.Config) fx.Option {
+	if !pubCfg.Enabled {
+		return fx.Module("events",
+			fx.Provide(func(log *zap.Logger) event.Publisher {
+				return publisher.NewNoop(log)
+			}),
+		)
+	}
+	return fx.Module("events",
+		fx.Supply(pubCfg),
+		fx.Provide(
+			func(cfg *nbox.Config, lc fx.Lifecycle, log *slog.Logger) (*natsgo.Conn, error) {
+				return natsbus.NewConn(cfg.NatsURL, "nbox", lc, log)
+			},
+			fx.Private,
+		),
+		fx.Provide(func(pubCfg publisher.Config, cfg *nbox.Config, nc *natsgo.Conn, log *zap.Logger) (event.Publisher, error) {
+			return publisher.New(pubCfg, nc, cfg.EventSubject(), log)
+		}),
+	)
+}
 
 func main() {
 	fmt.Print(banner)
@@ -121,8 +150,7 @@ func main() {
 			gw.RegisterBackend(ssmSec)
 			return gw
 		}),
-		fx.Supply(pubCfg),
-		fx.Provide(publisher.New),
+		eventModule(pubCfg),
 
 		// Tracking recorder wraps entry.Manager with audit trail + event dispatch.
 		// Must be at top-level scope so it applies to all consumers (box, export, handlers).

@@ -5,43 +5,32 @@ import (
 	"fmt"
 	"log/slog"
 
-	awssns "github.com/aws/aws-sdk-go-v2/service/sns"
-	"github.com/norlis/event-driven/pkg/transport/aws"
-	"github.com/norlis/event-driven/pkg/transport/aws/sns"
+	natsgo "github.com/nats-io/nats.go"
+	"github.com/norlis/event-driven/pkg/transport/nats/core"
 	"go.uber.org/zap"
 	"go.uber.org/zap/exp/zapslog"
 	"nbox/internal/event"
 )
 
-// New returns the event.Publisher to use based on Config:
-//   - cfg.Enabled=false              -> NoopPublisher (publish disabled on purpose)
-//   - cfg.Enabled=true, cfg.Topic="" -> error (misconfig)
-//   - cfg.Enabled=true, cfg.Topic=X  -> SNSPublisher backed by event-driven's sns.Publisher
-func New(
-	cfg Config,
-	snsClient *awssns.Client,
-	identity *aws.Identity,
-	logger *zap.Logger,
-) (event.Publisher, error) {
+// New returns the event.Publisher:
+//   - cfg.Enabled=false -> NoopPublisher (publish disabled on purpose)
+//   - else              -> Publisher backed by a NATS core publisher on subject
+func New(cfg Config, nc *natsgo.Conn, subject string, logger *zap.Logger) (event.Publisher, error) {
 	if !cfg.Enabled {
 		logger.Info("event publish disabled, using noop publisher")
 		return NewNoop(logger), nil
 	}
-	if cfg.Topic == "" {
-		return nil, errors.New("publisher: NBOX_EVENT_PUBLISH=true requires NBOX_EVENT_TOPIC")
+	if subject == "" {
+		return nil, errors.New("publisher: empty event subject")
 	}
 
 	slogLogger := slog.New(zapslog.NewHandler(logger.Core()))
-
-	inner, err := sns.NewPublisher(snsClient, sns.PublisherConfig{
-		Topic:    cfg.Topic,
-		Identity: identity,
-	}, slogLogger)
+	inner, err := core.NewPublisher(nc, core.PublisherConfig{Subject: subject}, slogLogger)
 	if err != nil {
-		return nil, fmt.Errorf("publisher: build sns: %w", err)
+		return nil, fmt.Errorf("publisher: build nats core: %w", err)
 	}
 
-	return &SNSPublisher{
+	return &Publisher{
 		inner:          inner,
 		source:         cfg.Source,
 		maxAttempts:    cfg.MaxAttempts,

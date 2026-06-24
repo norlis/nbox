@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	natsgo "github.com/nats-io/nats.go"
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
 	"nbox/internal/auth"
@@ -16,14 +17,19 @@ import (
 	grpcint "nbox/internal/entrypushd/grpc"
 	"nbox/internal/entrypushd/handler"
 	"nbox/internal/entrypushd/nboxclient"
+	"nbox/internal/platform/natsbus"
 )
 
-// Module wires the entrypushd binary: SQS consumer + gRPC server with
+// Module wires the entrypushd binary: NATS consumer + gRPC server with
 // AppRole + AWS STS M2M authentication.
 var Module = fx.Module("entrypushd",
 	fx.Provide(
 		NewSlog,
-		NewSQSSubscriber,
+		// NATS connection (fan-out bus).
+		func(cfg Config, lc fx.Lifecycle, log *slog.Logger) (*natsgo.Conn, error) {
+			return natsbus.NewConn(cfg.NatsURL, "entrypushd", lc, log)
+		},
+		NewNATSSubscriber,
 		handler.NewBroadcast,
 		grpcint.NewBroker,
 		// Snapshotter (optional, Fase 2.1.d): a real nbox.Client when

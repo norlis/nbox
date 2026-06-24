@@ -1,0 +1,403 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  NBOX Infrastructure - Unified Template
+  Uses GlobalTable resource for all envs to avoid code duplication.
+
+
+Parameters:
+
+  Prefix:
+    Type: String
+    Default: nbox
+    Description: prefix for all resources name
+
+  Environment:
+    Type: String
+    Default: development
+    AllowedValues:
+      - development
+      - production
+    Description: Environment name.
+
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, "production"]
+
+
+Resources:
+
+
+  EntriesTable:
+    Type: AWS::DynamoDB::GlobalTable
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      TableName: !Sub "${Prefix}-entries-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: Path
+          AttributeType: S
+        - AttributeName: Key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Path
+          KeyType: HASH
+        - AttributeName: Key
+          KeyType: RANGE
+      Replicas:
+        - Region: us-east-1
+          DeletionProtectionEnabled: !If [IsProduction, true, false]
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+          Tags:
+            - Key: project
+              Value: !Ref Prefix
+            - Key: environment
+              Value: !Ref Environment
+
+  TrackingEntriesTable:
+    Type: AWS::DynamoDB::GlobalTable
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      TableName: !Sub "${Prefix}-tracking-entries-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: Key
+          AttributeType: S
+        - AttributeName: Timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Key
+          KeyType: HASH
+        - AttributeName: Timestamp
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: TTL
+      Replicas:
+        - Region: us-east-1
+          DeletionProtectionEnabled: !If [IsProduction, true, false]
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+          Tags:
+            - Key: project
+              Value: !Ref Prefix
+            - Key: environment
+              Value: !Ref Environment
+
+  BoxTable:
+    Type: AWS::DynamoDB::GlobalTable
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      TableName: !Sub "${Prefix}-box-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: Service
+          AttributeType: S
+        - AttributeName: Stage
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Service
+          KeyType: HASH
+        - AttributeName: Stage
+          KeyType: RANGE
+      Replicas:
+        - Region: us-east-1
+          DeletionProtectionEnabled: !If [IsProduction, true, false]
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+          Tags:
+            - Key: project
+              Value: !Ref Prefix
+            - Key: environment
+              Value: !Ref Environment
+
+
+  PrefixConfigTable:
+    Type: AWS::DynamoDB::GlobalTable
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      TableName: !Sub "${Prefix}-prefix-config-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: Prefix
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Prefix
+          KeyType: HASH
+      Replicas:
+        - Region: us-east-1
+          DeletionProtectionEnabled: !If [IsProduction, true, false]
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+          Tags:
+            - Key: project
+              Value: !Ref Prefix
+            - Key: environment
+              Value: !Ref Environment
+            - Key: version
+              Value: v2
+
+
+  ConfigTable:
+    Type: AWS::DynamoDB::GlobalTable
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      TableName: !Sub "${Prefix}-config-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true            # KMS (AWS-managed aws/dynamodb key)
+      AttributeDefinitions:
+        - AttributeName: kind
+          AttributeType: S
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: kind
+          KeyType: HASH
+        - AttributeName: id
+          KeyType: RANGE
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES   # phase 2: push invalidation
+      Replicas:
+        - Region: us-east-1
+          DeletionProtectionEnabled: !If [IsProduction, true, false]
+          PointInTimeRecoverySpecification:
+            PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+          Tags:
+            - Key: project
+              Value: !Ref Prefix
+            - Key: environment
+              Value: !Ref Environment
+
+
+  BoxBucket:
+    Type: AWS::S3::Bucket
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    Properties:
+      BucketName: !Sub "${Prefix}-box-${Environment}"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 90
+      Tags:
+        - Key: project
+          Value: !Ref Prefix
+        - Key: environment
+          Value: !Ref Environment
+
+
+  # =========================================================
+  # ECS Task Roles (runtime app permissions, least-privilege)
+  # Incluyen ssmmessages:* para `aws ecs execute-command` (ECS Exec).
+  # =========================================================
+
+  NboxTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Prefix}-nbox-task-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Tags:
+        - Key: project
+          Value: !Ref Prefix
+        - Key: environment
+          Value: !Ref Environment
+      Policies:
+        - PolicyName: nbox-app
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: DynamoDB
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:DescribeTable
+                Resource:
+                  - !GetAtt EntriesTable.Arn
+                  - !GetAtt TrackingEntriesTable.Arn
+                  - !GetAtt BoxTable.Arn
+                  - !GetAtt PrefixConfigTable.Arn
+                  - !GetAtt ConfigTable.Arn
+                  - !Sub "${EntriesTable.Arn}/index/*"
+                  - !Sub "${TrackingEntriesTable.Arn}/index/*"
+                  - !Sub "${BoxTable.Arn}/index/*"
+                  - !Sub "${PrefixConfigTable.Arn}/index/*"
+                  - !Sub "${ConfigTable.Arn}/index/*"
+              - Sid: S3Objects
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "${BoxBucket.Arn}/*"
+              - Sid: S3Bucket
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt BoxBucket.Arn
+              - Sid: ParameterStore
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:PutParameter
+                  - ssm:DeleteParameter
+                  - ssm:AddTagsToResource
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*"
+              - Sid: ParameterStoreDescribe
+                Effect: Allow
+                Action: ssm:DescribeParameters
+                Resource: "*"
+              - Sid: STSIdentity
+                Effect: Allow
+                Action: sts:GetCallerIdentity
+                Resource: "*"
+              - Sid: ECSExec
+                Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: "*"
+
+  EntrypushdTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Prefix}-entrypushd-task-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Tags:
+        - Key: project
+          Value: !Ref Prefix
+        - Key: environment
+          Value: !Ref Environment
+      Policies:
+        - PolicyName: entrypushd-app
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ConfigTableRead
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource: !GetAtt ConfigTable.Arn
+              - Sid: STSIdentity
+                Effect: Allow
+                Action: sts:GetCallerIdentity
+                Resource: "*"
+              - Sid: ECSExec
+                Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: "*"
+
+  # =========================================================
+  # ECS Task Execution Role (compartido) — lo usa el agente ECS, no la app:
+  # pull de imagen (ECR), CloudWatch Logs, y (opcional) inyectar `secrets`.
+  # =========================================================
+
+  EcsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Prefix}-ecs-execution-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Tags:
+        - Key: project
+          Value: !Ref Prefix
+        - Key: environment
+          Value: !Ref Environment
+      Policies:
+        - PolicyName: task-secrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Permite que el bloque `secrets` del task definition inyecte
+              # HMAC_SECRET_KEY y otros desde SSM Parameter Store / Secrets Manager.
+              - Sid: SSMParams
+                Effect: Allow
+                Action: ssm:GetParameters
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${Environment}/nbox/*"
+              - Sid: SecretsManager
+                Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${Environment}/nbox/*"
+              - Sid: KMSDecrypt
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService:
+                      - !Sub "ssm.${AWS::Region}.amazonaws.com"
+                      - !Sub "secretsmanager.${AWS::Region}.amazonaws.com"
+
+# =========================================================
+# Outputs
+# =========================================================
+Outputs:
+  EntriesTableName:
+    Value: !Ref EntriesTable
+  TrackingEntriesTableName:
+    Value: !Ref TrackingEntriesTable
+  BoxTableName:
+    Value: !Ref BoxTable
+  PrefixConfigTableName:
+    Value: !Ref PrefixConfigTable
+  ConfigTableName:
+    Value: !Ref ConfigTable
+  BucketName:
+    Value: !Ref BoxBucket
+  NboxTaskRoleArn:
+    Description: ARN del task role de nbox (taskRoleArn en el task definition)
+    Value: !GetAtt NboxTaskRole.Arn
+  EntrypushdTaskRoleArn:
+    Description: ARN del task role de entrypushd (taskRoleArn en el task definition)
+    Value: !GetAtt EntrypushdTaskRole.Arn
+  EcsExecutionRoleArn:
+    Description: ARN del execution role compartido (executionRoleArn en el task definition)
+    Value: !GetAtt EcsExecutionRole.Arn

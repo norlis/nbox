@@ -17,18 +17,23 @@ gestionar backups o validar integridad de datos.`,
 	// Run: func(cmd *cobra.Command, args []string) { fmt.Println("Hola NBox") },
 }
 
-// Execute añade todos los commandos hijos al commando raíz y configura los flags.
-// Esta función es llamada por main.main().
-func Execute() error {
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
-		return err
-	}
-	return nil
+// Execute runs the root command and exits the process with a status code
+// mapped from the returned error (0 ok, 2 usage error, 1 otherwise). Cobra
+// prints the error to stderr; usage is silenced so runtime errors don't dump
+// the full help text. Called by main.main().
+func Execute() {
+	os.Exit(exitCode(rootCmd.Execute()))
 }
 
 func init() {
 	// Aquí defines tus flags y configuración.
+
+	// Runtime errors shouldn't spew usage; flag-parse errors become usage
+	// errors (exit 2) while cobra still prints them to stderr.
+	rootCmd.SilenceUsage = true
+	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return usageErrorf("%w", err)
+	})
 
 	// PersistentFlags: Flags que están disponibles para este commando Y todos sus hijos.
 	// Es ideal poner la 'region' aquí, ya que seed, list, delete, etc., necesitarán saber la región AWS.

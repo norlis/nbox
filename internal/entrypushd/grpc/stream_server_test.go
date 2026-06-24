@@ -269,6 +269,17 @@ func TestWatch_SealsVaultUpsertDelta_NotDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "DELTA-SECRET", string(plain))
 
+	// The retry loop above may have buffered several "u1" upserts (the broker
+	// is fire-and-forget). Let the stream quiesce so every buffered duplicate
+	// has flushed before we publish the delete; otherwise a late duplicate
+	// upsert could land after "before" is captured and masquerade as the
+	// last-sent event.
+	require.Eventually(t, func() bool {
+		n := len(stream.snapshotOf())
+		time.Sleep(20 * time.Millisecond)
+		return len(stream.snapshotOf()) == n
+	}, time.Second, 25*time.Millisecond)
+
 	// Vault DELETE delta => NOT sealed (no value to resolve).
 	before := len(stream.snapshotOf())
 	require.Eventually(t, func() bool {
