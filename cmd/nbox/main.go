@@ -130,7 +130,23 @@ func main() {
 			return authstore.NewRefreshingStore(snap), nil
 		}),
 		fx.Provide(boxstore.NewS3),
-		fx.Provide(prefixstore.NewDynamoDB),
+		fx.Provide(func(
+			src config.Source,
+			cfg *nbox.Config,
+			proc *entry.Processor,
+			ddb *dynamodb.Client,
+			lc fx.Lifecycle,
+			log *slog.Logger,
+		) (prefix.Store, error) {
+			parse := func(raw []byte) (*prefixstore.PrefixIndex, error) {
+				return prefixstore.ParseIndex(raw, proc)
+			}
+			snap := config.NewSnapshot(config.KeyPrefixConfig, src, parse, cfg.ConfigTTL, log)
+			if err := config.Activate(lc, snap); err != nil {
+				return nil, err
+			}
+			return prefixstore.NewConfigBacked(snap, config.NewAdminStore(ddb, cfg.ConfigTableName)), nil
+		}),
 		fx.Provide(trackingstore.NewDynamoDB),
 		fx.Provide(entrystore.NewDynamoDB),
 		fx.Provide(entrystore.NewSSM),

@@ -6,6 +6,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// version is overridden at build time: -ldflags "-X nbox/cmd/cli/commands.version=v1.2.3".
+var version = "dev"
+
 // rootCmd representa el commando base cuando se llama sin subcomandos.
 var rootCmd = &cobra.Command{
 	Use:   "nbox-cli",
@@ -36,14 +39,18 @@ func init() {
 	})
 
 	// PersistentFlags: Flags que están disponibles para este commando Y todos sus hijos.
-	// Es ideal poner la 'region' aquí, ya que seed, list, delete, etc., necesitarán saber la región AWS.
-	rootCmd.PersistentFlags().StringP("region", "r", "us-east-1", "Región de AWS por defecto")
+	rootCmd.PersistentFlags().StringP("region", "r", "", "Región de AWS (sobrescribe AWS_REGION)")
 
-	// Flags locales: Solo aplican al commando root (no se heredan).
-	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// Apply --region to AWS_REGION before any subcommand runs (flag > env).
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		region, _ := cmd.Flags().GetString("region")
+		return applyRegion(region, os.Setenv)
+	}
+
+	rootCmd.Version = version
 
 	// Registrar subcomandos
-	rootCmd.AddCommand(seedCmd)
+	rootCmd.AddCommand(prefixCmd)
 	rootCmd.AddCommand(hasherCmd)
 	rootCmd.AddCommand(approleCmd)
 	rootCmd.AddCommand(configCmd)

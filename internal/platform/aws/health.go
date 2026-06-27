@@ -7,12 +7,13 @@ import (
 	"net/http"
 	"slices"
 
+	"nbox/internal/nbox"
+
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"golang.org/x/sync/errgroup"
-	"nbox/internal/nbox"
 )
 
 var (
@@ -76,7 +77,7 @@ func (c *DynamoDBChecker) Check(ctx context.Context) error {
 		c.config.EntryTableName,
 		c.config.TrackingEntryTableName,
 		c.config.BoxTableName,
-		c.config.PrefixConfigTableName,
+		c.config.ConfigTableName,
 	}
 
 	// Config guard: check before launching goroutines — it's a config error, cheap.

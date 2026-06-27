@@ -36,6 +36,11 @@ var (
 	KeyBasicAuth = Key{Kind: "basic_auth", EnvVar: "NBOX_BASIC_AUTH_CREDENTIALS", Shape: ShapeObject}
 	KeyAppRole   = Key{Kind: "app_role", EnvVar: "NBOX_APPROLE_ROLES", Shape: ShapeArray}
 	KeyARNMap    = Key{Kind: "arn_map", EnvVar: "NBOX_AWS_ARN_MAP", Shape: ShapeArray}
+
+	// KeyPrefixConfig is the storage-routing config domain. id = the prefix
+	// string; data = JSON of one prefix.Config. EnvVar lets local dev inject the
+	// whole array; empty table+env ⇒ no prefixes (ByPrefix → not-found).
+	KeyPrefixConfig = Key{Kind: "prefix_config", EnvVar: "NBOX_PREFIX_CONFIG_JSON", Shape: ShapeArray}
 )
 
 // Source resolves the raw JSON payload for a key.

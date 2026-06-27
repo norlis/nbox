@@ -8,10 +8,11 @@ import (
 	"sync"
 	"testing"
 
+	"nbox/internal/nbox"
+
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
-	"nbox/internal/nbox"
 )
 
 // ---------------------------------------------------------------------------
@@ -69,7 +70,7 @@ func makeConfig(entry, tracking, box, prefix string) *nbox.Config {
 		EntryTableName:         entry,
 		TrackingEntryTableName: tracking,
 		BoxTableName:           box,
-		PrefixConfigTableName:  prefix,
+		ConfigTableName:        prefix,
 	}
 }
 

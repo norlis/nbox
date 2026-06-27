@@ -25,7 +25,6 @@ type Config struct {
 	EntryTableName         string `env:"NBOX_ENTRIES_TABLE_NAME"          envDefault:"nbox-entry-table"          pkl:"entryTableName"`
 	TrackingEntryTableName string `env:"NBOX_TRACKING_ENTRIES_TABLE_NAME" envDefault:"nbox-tracking-entry-table" pkl:"trackingEntryTableName"`
 	BoxTableName           string `env:"NBOX_BOX_TABLE_NAME"              envDefault:"nbox-box-table"            pkl:"boxTableName"`
-	PrefixConfigTableName  string `env:"NBOX_PREFIX_CONFIG_TABLE_NAME"    envDefault:"nbox-prefix-config-table"  pkl:"prefixConfigTableName"`
 
 	// --- Parameter Store ---
 	ParameterStoreKeyId string `env:"NBOX_PARAMETER_STORE_KEY_ID"    pkl:"parameterStoreKeyId"`

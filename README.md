@@ -47,7 +47,7 @@ NBOX se compone de **dos servicios** y una **CLI** de administración:
 |---|---|---|
 | **`nbox`** | Microservicio HTTP: API REST de entries, templates (box), export, tracking y auth (JWT/Basic + OPA). | `7337` |
 | **`entrypushd`** | Subscriber NATS + servidor gRPC (`KVStream/Watch`): empuja cambios a **agentes** en tiempo real, con auth M2M (AppRole / AWS-STS) y entrega **HPKE** para secretos vault. | `9337` |
-| **`nbox-cli`** | Tooling de administración: hashes, credenciales M2M, seed y config dinámica. | — |
+| **`nbox-cli`** | Tooling de administración: hashes, credenciales M2M, prefix routing y config dinámica. | — |
 
 **Almacenamiento:** DynamoDB (entries / config / tracking), Parameter Store + KMS (secretos), S3 (templates).
 
@@ -268,7 +268,6 @@ La configuración es por **variable de entorno**, separada por binario. Todas se
 | `NBOX_ENTRIES_TABLE_NAME`           | Tabla DynamoDB de entries.                                                  | `nbox-entry-table`                          |
 | `NBOX_TRACKING_ENTRIES_TABLE_NAME`  | Tabla DynamoDB de historial de cambios.                                     | `nbox-tracking-entry-table`                 |
 | `NBOX_BOX_TABLE_NAME`               | Tabla DynamoDB de metadata de plantillas.                                   | `nbox-box-table`                            |
-| `NBOX_PREFIX_CONFIG_TABLE_NAME`     | Tabla DynamoDB de configuración de prefijos.                                | `nbox-prefix-config-table`                  |
 | `NBOX_PARAMETER_STORE_KEY_ID`       | ARN de la clave KMS para cifrar secretos en Parameter Store.                | _(vacío)_                                   |
 | `NBOX_PARAMETER_STORE_SHORT_ARN`    | `true` = nombre corto del parámetro; `false` = ARN completo.                | `true`                                      |
 | `NBOX_DEFAULT_PREFIX`               | Prefijo por defecto si no se especifica.                                    | `global`                                    |
@@ -302,7 +301,7 @@ Eventos (publisher NATS, solo en `nbox`):
 
 #### `nbox-cli` — tooling de administración
 
-Orientado a flags/argumentos: `hasher`, `approle generate/rotate-secret`, `seed` y `config` (administración de la tabla de config dinámica). Ver [CLI de administración](#cli-de-administración-nbox-cli). `seed` usa `AWS_REGION` y los nombres de tabla DynamoDB de la sección de `nbox`.
+Orientado a flags/argumentos: `hasher`, `approle generate/rotate-secret`, `prefix` (routing de prefijos) y `config` (administración de la tabla de config dinámica). Ver [CLI de administración](#cli-de-administración-nbox-cli). Usa `AWS_REGION` y `--table`/`NBOX_CONFIG_TABLE_NAME`.
 
 
 ### Desarrollo
@@ -343,7 +342,9 @@ sembrar configuración y administrar la tabla de config dinámica. Se construye 
 | `nbox-cli hasher <password>` | Genera un bcrypt hash para pegar en `NBOX_BASIC_AUTH_CREDENTIALS`. |
 | `nbox-cli approle generate <nombre> --opa-role <rol>` | Crea una credencial M2M (`role_id` + `secret_id` + hash) e imprime el JSON para `NBOX_APPROLE_ROLES`. |
 | `nbox-cli approle rotate-secret` | Genera un nuevo `secret_id` + hash para rotar sin downtime (append al array `secret_hashes`). |
-| `nbox-cli seed [file\|json\|-]` | Siembra configuraciones de prefijo en DynamoDB (acepta archivo, JSON inline o STDIN). |
+| `nbox-cli prefix upsert --prefix <p> [--type <backend>] [--table <t>]` | Crea/actualiza una entrada de routing de prefijo en la tabla config. |
+| `nbox-cli prefix list [--json] [--table <t>]` | Lista todas las configuraciones de prefijo. |
+| `nbox-cli prefix rm <prefix> [--force] [--table <t>]` | Borra una configuración de prefijo. |
 | `nbox-cli config <user\|aws-sts\|approle> <upsert\|generate\|list\|rm>` | Administra la tabla de config dinámica (DynamoDB) **sin reiniciar** los servicios. |
 
 ### `nbox-cli config` — config dinámica sin reinicio
