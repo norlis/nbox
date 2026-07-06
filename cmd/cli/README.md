@@ -13,4 +13,10 @@
   # Remove a prefix config (interactive prompt unless --force)
   go run cmd/cli/main.go prefix rm global/serverless --force --table <cfg-table>
 
+  # Local dev — generate env vars without DynamoDB (--emit-env prints export lines to stdout)
+  go run cmd/cli/main.go config user upsert --username admin --password 'secret' --roles admin --emit-env
+  go run cmd/cli/main.go config approle generate --name watcher --roles entrypushd --emit-env
+  go run cmd/cli/main.go config approle rotate-secret --emit-env
+  go run cmd/cli/main.go config aws-sts upsert --arn arn:aws:iam::123:role/foo --roles entrypushd --emit-env
+
 ```

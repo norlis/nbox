@@ -80,6 +80,13 @@ func query(ctx context.Context, client DynamoAPI, table, kind string) ([]Record,
 	return out, nil
 }
 
+// EnvValue wraps one entity's JSON into the collection shape of the key's env
+// var (object for ShapeObject, array for ShapeArray) — the value you paste into
+// NBOX_*. Reuses assemble so the shape logic lives in one place.
+func EnvValue(k Key, id string, data []byte) []byte {
+	return assemble(k, []Record{{ID: id, Data: string(data)}})
+}
+
 // assemble joins each Record's Data into the array/object the parser wants.
 func assemble(k Key, recs []Record) []byte {
 	parts := make([]string, 0, len(recs))

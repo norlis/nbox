@@ -17,8 +17,8 @@ import (
 // shared config table. Replaces the old `seed` command.
 var prefixCmd = &cobra.Command{
 	Use:   "prefix",
-	Short: "Administrar configuración de prefijos (routing) en la tabla config",
-	Long:  `Crea/lista/borra/importa configuraciones de prefijo. Tabla: --table o NBOX_CONFIG_TABLE_NAME.`,
+	Short: "Manage prefix (routing) configuration in the config table",
+	Long:  `Create/list/delete prefix configurations. Table: --table or NBOX_CONFIG_TABLE_NAME.`,
 }
 
 func toBackends(ss []string) []prefix.StorageBackendType {
@@ -76,12 +76,12 @@ func changedOverrides(cmd *cobra.Command) prefixOverrides {
 
 var prefixUpsertCmd = &cobra.Command{
 	Use:     "upsert",
-	Short:   "Crear/actualizar un prefijo (merge: solo cambia los flags provistos)",
+	Short:   "Create/update a prefix (merge: only the provided flags change)",
 	Example: "  nbox-cli prefix upsert --prefix=global/serverless --type=parameterstore --secure=parameterstore_secure --allowed=parameterstore_secure",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		p, _ := cmd.Flags().GetString("prefix")
 		if p == "" {
-			return usageErrorf("--prefix requerido")
+			return usageErrorf("--prefix required")
 		}
 		id := strings.Trim(p, "/")
 		set := changedOverrides(cmd)
@@ -106,7 +106,7 @@ var prefixUpsertCmd = &cobra.Command{
 			if err := s.Upsert(cmd.Context(), config.KeyPrefixConfig.Kind, id, data, "nbox-cli"); err != nil {
 				return err
 			}
-			info("[ok] prefix %q guardado (default=%s secure=%s allowed=%v)\n", id, cfg.TypeDefault, cfg.TypeSecure, cfg.TypeAllowed)
+			info("[ok] prefix %q saved (default=%s secure=%s allowed=%v)\n", id, cfg.TypeDefault, cfg.TypeSecure, cfg.TypeAllowed)
 			return nil
 		})
 	},
@@ -114,7 +114,7 @@ var prefixUpsertCmd = &cobra.Command{
 
 var prefixListCmd = &cobra.Command{
 	Use:     "list",
-	Short:   "Listar configuraciones de prefijo",
+	Short:   "List prefix configurations",
 	Example: "  nbox-cli prefix list --json",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		asJSON, _ := cmd.Flags().GetBool("json")
@@ -160,7 +160,7 @@ func formatPrefixList(recs []config.Record, asJSON bool) (string, error) {
 
 var prefixRmCmd = &cobra.Command{
 	Use:     "rm [prefix]",
-	Short:   "Borrar una configuración de prefijo",
+	Short:   "Delete a prefix configuration",
 	Example: "  nbox-cli prefix rm global/serverless --force",
 	Args:    exactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -171,7 +171,7 @@ var prefixRmCmd = &cobra.Command{
 			return err
 		}
 		if !proceed {
-			info("cancelado\n")
+			info("cancelled\n")
 			return nil
 		}
 		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
@@ -179,7 +179,7 @@ var prefixRmCmd = &cobra.Command{
 		}); err != nil {
 			return err
 		}
-		info("[ok] prefix %q borrado\n", id)
+		info("[ok] prefix %q deleted\n", id)
 		return nil
 	},
 }
@@ -197,9 +197,9 @@ func confirmDelete(force, isTTY bool, in io.Reader, id string) (bool, error) {
 		return true, nil
 	}
 	if !isTTY {
-		return false, usageErrorf("rm de %q es destructivo: usá --force en modo no interactivo", id)
+		return false, usageErrorf("rm of %q is destructive: use --force in non-interactive mode", id)
 	}
-	info("borrar prefix %q? [y/N]: ", id)
+	info("delete prefix %q? [y/N]: ", id)
 	line, _ := bufio.NewReader(in).ReadString('\n')
 	line = strings.ToLower(strings.TrimSpace(line))
 	return line == "y" || line == "yes", nil
@@ -215,15 +215,15 @@ func applyRegion(region string, setenv func(string, string) error) error {
 }
 
 func init() {
-	prefixCmd.PersistentFlags().String("table", "", "Tabla DynamoDB (default: NBOX_CONFIG_TABLE_NAME)")
+	prefixCmd.PersistentFlags().String("table", "", "DynamoDB table (default: NBOX_CONFIG_TABLE_NAME)")
 
-	prefixUpsertCmd.Flags().String("prefix", "", "prefijo (id) — REQUERIDO")
+	prefixUpsertCmd.Flags().String("prefix", "", "prefix (id) — REQUIRED")
 	prefixUpsertCmd.Flags().String("type", "", "backend por defecto (dynamodb|parameterstore|parameterstore_secure)")
 	prefixUpsertCmd.Flags().String("secure", "", "backend para entries secure")
-	prefixUpsertCmd.Flags().StringSlice("allowed", nil, "backends permitidos (lista)")
+	prefixUpsertCmd.Flags().StringSlice("allowed", nil, "allowed backends (list)")
 
-	prefixListCmd.Flags().Bool("json", false, "salida JSON (machine-readable)")
-	prefixRmCmd.Flags().BoolP("force", "f", false, "no pedir confirmación")
+	prefixListCmd.Flags().Bool("json", false, "JSON output (machine-readable)")
+	prefixRmCmd.Flags().BoolP("force", "f", false, "skip confirmation prompt")
 
 	prefixCmd.AddCommand(prefixUpsertCmd, prefixListCmd, prefixRmCmd)
 }

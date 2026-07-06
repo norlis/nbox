@@ -23,11 +23,11 @@ import (
 // configCmd is the parent for config-table (DynamoDB) operations.
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Administrator la tabla config dinámica (DynamoDB)",
-	Long: `Crea/actualiza/borra entidades de auth en la tabla config sin reiniciar
-los servicios: user (basic auth), aws-sts (M2M) y approle (M2M).
+	Short: "Manage the dynamic config table (DynamoDB)",
+	Long: `Create/update/delete auth entities in the config table without restarting
+the services: user (basic auth), aws-sts (M2M) and approle (M2M).
 
-La tabla se toma de --table o de NBOX_CONFIG_TABLE_NAME.`,
+The table is resolved from --table or NBOX_CONFIG_TABLE_NAME.`,
 }
 
 // tableName resolves the table from --table or NBOX_CONFIG_TABLE_NAME.
@@ -45,7 +45,7 @@ func tableName(cmd *cobra.Command) string {
 func withAdminStore(ctx context.Context, cmd *cobra.Command, fn func(*config.AdminStore) error) error {
 	table := tableName(cmd)
 	if table == "" {
-		return usageErrorf("set --table o NBOX_CONFIG_TABLE_NAME")
+		return usageErrorf("set --table or NBOX_CONFIG_TABLE_NAME")
 	}
 	var opErr error
 	app := fx.New(
@@ -93,17 +93,50 @@ func buildAppRole(roleID, name string, roles, cidrs []string, secretHash string,
 	return b
 }
 
+// hashPassword bcrypts --password (required) at --cost.
+func hashPassword(cmd *cobra.Command) (string, error) {
+	password, _ := cmd.Flags().GetString("password")
+	if password == "" {
+		return "", errors.New("--password required")
+	}
+	cost, _ := cmd.Flags().GetInt("cost")
+	h, err := bcrypt.GenerateFromPassword([]byte(password), cost)
+	return string(h), err
+}
+
+// printApproleCreds writes the role credentials to stderr (secret, shown once).
+func printApproleCreds(roleID, secretID string) {
+	infoln(strings.Repeat("=", 70))
+	info("role_id:    %s\n", roleID)
+	info("secret_id:  %s\n", secretID)
+	infoln(strings.Repeat("=", 70))
+	infoln("Distribute the secret_id via a secure channel. It will NOT be shown again.")
+}
+
 var configUserUpsertCmd = &cobra.Command{
 	Use:   "upsert",
-	Short: "Crear/actualizar un usuario (merge: solo cambia los flags provistos)",
+	Short: "Create/update a user (merge: only the provided flags change)",
+	Example: "  nbox-cli config user upsert --username admin --password s3cr3t --roles admin\n" +
+		"  nbox-cli config user upsert --username admin --password s3cr3t --roles admin --emit-env",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		username, _ := cmd.Flags().GetString("username")
 		if username == "" {
-			return usageErrorf("--username requerido")
+			return usageErrorf("--username required")
 		}
+
+		// Local: build a fresh entity from flags and print the env var; no table.
+		if emit, _ := cmd.Flags().GetBool("emit-env"); emit {
+			hash, err := hashPassword(cmd)
+			if err != nil {
+				return err
+			}
+			roles, _ := cmd.Flags().GetStringSlice("roles")
+			status, _ := cmd.Flags().GetString("status")
+			emitEnv(config.KeyBasicAuth, username, buildBasicAuthData(hash, roles, status))
+			return nil
+		}
+
 		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
-			// Merge onto the existing entity: only flags actually passed override
-			// it, so e.g. changing just the password preserves roles/status.
 			d := basicAuthData{Status: "active"}
 			cur, err := s.Get(cmd.Context(), config.KeyBasicAuth.Kind, username)
 			if err != nil {
@@ -112,18 +145,12 @@ var configUserUpsertCmd = &cobra.Command{
 			if cur != nil {
 				_ = json.Unmarshal([]byte(cur.Data), &d)
 			}
-			// Password is required when creating; re-hashed only if --password is given.
 			if cur == nil || cmd.Flags().Changed("password") {
-				password, _ := cmd.Flags().GetString("password")
-				if password == "" {
-					return errors.New("--password requerido para un usuario nuevo")
-				}
-				cost, _ := cmd.Flags().GetInt("cost")
-				hash, herr := bcrypt.GenerateFromPassword([]byte(password), cost)
+				hash, herr := hashPassword(cmd)
 				if herr != nil {
 					return herr
 				}
-				d.Password = string(hash)
+				d.Password = hash
 			}
 			if cmd.Flags().Changed("roles") {
 				d.Roles, _ = cmd.Flags().GetStringSlice("roles")
@@ -134,7 +161,7 @@ var configUserUpsertCmd = &cobra.Command{
 			if err := s.Upsert(cmd.Context(), config.KeyBasicAuth.Kind, username, buildBasicAuthData(d.Password, d.Roles, d.Status), "nbox-cli"); err != nil {
 				return err
 			}
-			info("[ok] user %q guardado (roles=%v status=%s)\n", username, d.Roles, d.Status)
+			info("[ok] user %q saved (roles=%v status=%s)\n", username, d.Roles, d.Status)
 			return nil
 		})
 	},
@@ -142,7 +169,7 @@ var configUserUpsertCmd = &cobra.Command{
 
 var configUserListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "Listar usuarios de basic auth (sin exponer hashes)",
+	Short: "List basic auth users (hashes not exposed)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			recs, err := s.List(cmd.Context(), config.KeyBasicAuth.Kind)
@@ -161,7 +188,7 @@ var configUserListCmd = &cobra.Command{
 
 var configUserRmCmd = &cobra.Command{
 	Use:   "rm [username]",
-	Short: "Borrar un usuario de basic auth",
+	Short: "Delete a basic auth user",
 	Args:  exactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
@@ -169,7 +196,7 @@ var configUserRmCmd = &cobra.Command{
 		}); err != nil {
 			return err
 		}
-		info("[ok] user %q borrado\n", args[0])
+		info("[ok] user %q deleted\n", args[0])
 		return nil
 	},
 }
@@ -178,11 +205,20 @@ var configUserRmCmd = &cobra.Command{
 
 var configAwsStsUpsertCmd = &cobra.Command{
 	Use:   "upsert",
-	Short: "Crear/actualizar un mapeo ARN (merge: solo cambia los flags provistos)",
+	Short: "Create/update an ARN mapping (merge: only the provided flags change)",
+	Example: "  nbox-cli config aws-sts upsert --arn arn:aws:iam::123:role/foo --roles entrypushd\n" +
+		"  nbox-cli config aws-sts upsert --arn arn:aws:iam::123:role/foo --roles entrypushd --emit-env",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		arn, _ := cmd.Flags().GetString("arn")
 		if arn == "" {
-			return usageErrorf("--arn requerido (forma canónica iam role)")
+			return usageErrorf("--arn required (canonical iam role form)")
+		}
+		if emit, _ := cmd.Flags().GetBool("emit-env"); emit {
+			name, _ := cmd.Flags().GetString("name")
+			roles, _ := cmd.Flags().GetStringSlice("roles")
+			status, _ := cmd.Flags().GetString("status")
+			emitEnv(config.KeyARNMap, arn, buildARNMapping(arn, name, roles, status))
+			return nil
 		}
 		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			// Merge onto the existing mapping: only passed flags override it.
@@ -209,7 +245,7 @@ var configAwsStsUpsertCmd = &cobra.Command{
 			if err := s.Upsert(cmd.Context(), config.KeyARNMap.Kind, arn, data, "nbox-cli"); err != nil {
 				return err
 			}
-			info("[ok] arn %q guardado (roles=%v status=%s)\n", arn, m.Roles, m.Status)
+			info("[ok] arn %q saved (roles=%v status=%s)\n", arn, m.Roles, m.Status)
 			return nil
 		})
 	},
@@ -217,7 +253,7 @@ var configAwsStsUpsertCmd = &cobra.Command{
 
 var configAwsStsListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "Listar mapeos ARN",
+	Short: "List ARN mappings",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			recs, err := s.List(cmd.Context(), config.KeyARNMap.Kind)
@@ -236,7 +272,7 @@ var configAwsStsListCmd = &cobra.Command{
 
 var configAwsStsRmCmd = &cobra.Command{
 	Use:   "rm [arn]",
-	Short: "Borrar un mapeo ARN",
+	Short: "Delete an ARN mapping",
 	Args:  exactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
@@ -244,7 +280,7 @@ var configAwsStsRmCmd = &cobra.Command{
 		}); err != nil {
 			return err
 		}
-		info("[ok] arn %q borrado\n", args[0])
+		info("[ok] arn %q deleted\n", args[0])
 		return nil
 	},
 }
@@ -253,14 +289,16 @@ var configAwsStsRmCmd = &cobra.Command{
 
 var configApproleGenerateCmd = &cobra.Command{
 	Use:   "generate",
-	Short: "Generar y persistir un AppRole (role_id + secret_id)",
+	Short: "Generate and persist an AppRole (role_id + secret_id)",
+	Example: "  nbox-cli config approle generate --name watcher --roles entrypushd --cidrs 10.0.0.0/8\n" +
+		"  nbox-cli config approle generate --name watcher --roles entrypushd --emit-env",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")
 		roles, _ := cmd.Flags().GetStringSlice("roles")
 		cidrs, _ := cmd.Flags().GetStringSlice("cidrs")
 		cost, _ := cmd.Flags().GetInt("cost")
 		if name == "" {
-			return usageErrorf("--name requerido")
+			return usageErrorf("--name required")
 		}
 		if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
 			return usageErrorf("cost must be between %d and %d", bcrypt.MinCost, bcrypt.MaxCost)
@@ -272,24 +310,90 @@ var configApproleGenerateCmd = &cobra.Command{
 			return fmt.Errorf("bcrypt: %w", err)
 		}
 		data := buildAppRole(roleID, name, roles, cidrs, string(hash), time.Now().UTC())
+
+		if emit, _ := cmd.Flags().GetBool("emit-env"); emit {
+			emitEnv(config.KeyAppRole, roleID, data)
+			printApproleCreds(roleID, secretID)
+			return nil
+		}
 		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			return s.Upsert(cmd.Context(), config.KeyAppRole.Kind, roleID, data, "nbox-cli")
 		}); err != nil {
 			return err
 		}
-		// Credentials + guidance are diagnostics (and a secret) → stderr.
-		infoln(strings.Repeat("=", 70))
-		info("role_id:    %s\n", roleID)
-		info("secret_id:  %s\n", secretID)
-		infoln(strings.Repeat("=", 70))
-		infoln("Distribuí el secret_id por canal seguro. NO se vuelve a mostrar.")
+		printApproleCreds(roleID, secretID)
+		return nil
+	},
+}
+
+var configApproleRotateCmd = &cobra.Command{
+	Use:   "rotate-secret [role_id]",
+	Short: "Rotate an AppRole secret (appends a new secret_hash, zero-downtime)",
+	Example: "  nbox-cli config approle rotate-secret <role_id>\n" +
+		"  nbox-cli config approle rotate-secret --emit-env",
+	Args: maxArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cost, _ := cmd.Flags().GetInt("cost")
+		if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
+			return usageErrorf("cost must be between %d and %d", bcrypt.MinCost, bcrypt.MaxCost)
+		}
+		secretID := uuid.NewString()
+		hash, err := bcrypt.GenerateFromPassword([]byte(secretID), cost)
+		if err != nil {
+			return fmt.Errorf("bcrypt: %w", err)
+		}
+		newHash := approle.SecretHash{Hash: string(hash), CreatedAt: time.Now().UTC()}
+
+		// Local: no role to read — print the hash fragment to append + secret_id.
+		if emit, _ := cmd.Flags().GetBool("emit-env"); emit {
+			// Reject a role_id here: emit-env never touches the table, so
+			// accepting one would wrongly imply that role was rotated.
+			if len(args) > 0 {
+				return usageErrorf("--emit-env does not accept a role_id (nothing is persisted; it only prints the fragment)")
+			}
+			frag, err := json.Marshal(newHash)
+			if err != nil {
+				return err
+			}
+			outln(string(frag))
+			info("secret_id: %s  (append the hash above to the role's secret_hashes in NBOX_APPROLE_ROLES)\n", secretID)
+			return nil
+		}
+
+		if len(args) != 1 {
+			return usageErrorf("role_id required (or use --emit-env)")
+		}
+		roleID := args[0]
+		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+			cur, err := s.Get(cmd.Context(), config.KeyAppRole.Kind, roleID)
+			if err != nil {
+				return err
+			}
+			if cur == nil {
+				return fmt.Errorf("approle %q not found", roleID)
+			}
+			var role approle.Role
+			if err := json.Unmarshal([]byte(cur.Data), &role); err != nil {
+				return fmt.Errorf("approle %q is corrupt: %w", roleID, err)
+			}
+			role.SecretHashes = append(role.SecretHashes, newHash)
+			data, mErr := json.Marshal(role)
+			if mErr != nil {
+				return mErr
+			}
+			return s.Upsert(cmd.Context(), config.KeyAppRole.Kind, roleID, data, "nbox-cli")
+		}); err != nil {
+			return err
+		}
+		info("[ok] approle %q rotated (new secret_hash appended; the old one remains valid)\n", roleID)
+		info("secret_id: %s  (distribute securely; remove the old hash after the grace period)\n", secretID)
 		return nil
 	},
 }
 
 var configApproleListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "Listar AppRoles (sin exponer secret_hashes)",
+	Short: "List AppRoles (secret_hashes not exposed)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
 			recs, err := s.List(cmd.Context(), config.KeyAppRole.Kind)
@@ -309,7 +413,7 @@ var configApproleListCmd = &cobra.Command{
 
 var configApproleRmCmd = &cobra.Command{
 	Use:   "rm [role_id]",
-	Short: "Borrar un AppRole",
+	Short: "Delete an AppRole",
 	Args:  exactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
@@ -317,35 +421,40 @@ var configApproleRmCmd = &cobra.Command{
 		}); err != nil {
 			return err
 		}
-		info("[ok] approle %q borrado\n", args[0])
+		info("[ok] approle %q deleted\n", args[0])
 		return nil
 	},
 }
 
 func init() {
-	configCmd.PersistentFlags().String("table", "", "Tabla DynamoDB (default: NBOX_CONFIG_TABLE_NAME)")
+	configCmd.PersistentFlags().String("table", "", "DynamoDB table (default: NBOX_CONFIG_TABLE_NAME)")
 
-	configUser := &cobra.Command{Use: "user", Short: "Usuarios de basic auth"}
+	configUser := &cobra.Command{Use: "user", Short: "Basic auth users"}
 	configUserUpsertCmd.Flags().String("username", "", "username (id)")
-	configUserUpsertCmd.Flags().String("password", "", "password en claro (se bcryptea)")
-	configUserUpsertCmd.Flags().StringSlice("roles", nil, "roles OPA")
+	configUserUpsertCmd.Flags().String("password", "", "plaintext password (bcrypt-hashed)")
+	configUserUpsertCmd.Flags().StringSlice("roles", nil, "OPA roles")
 	configUserUpsertCmd.Flags().String("status", "active", "active|disabled")
 	configUserUpsertCmd.Flags().IntP("cost", "c", bcrypt.DefaultCost, "Bcrypt cost (4-31)")
+	configUserUpsertCmd.Flags().Bool("emit-env", false, "print export NBOX_BASIC_AUTH_CREDENTIALS instead of persisting (local dev)")
 	configUser.AddCommand(configUserUpsertCmd, configUserListCmd, configUserRmCmd)
 
-	configAwsSts := &cobra.Command{Use: "aws-sts", Short: "Auth AWS-STS M2M (mapeos ARN→roles)"}
-	configAwsStsUpsertCmd.Flags().String("arn", "", "ARN canónico iam role (id)")
-	configAwsStsUpsertCmd.Flags().String("name", "", "nombre legible")
-	configAwsStsUpsertCmd.Flags().StringSlice("roles", nil, "roles OPA")
+	configAwsSts := &cobra.Command{Use: "aws-sts", Short: "AWS-STS M2M auth (ARN→roles mappings)"}
+	configAwsStsUpsertCmd.Flags().String("arn", "", "canonical iam role ARN (id)")
+	configAwsStsUpsertCmd.Flags().String("name", "", "human-readable name")
+	configAwsStsUpsertCmd.Flags().StringSlice("roles", nil, "OPA roles")
 	configAwsStsUpsertCmd.Flags().String("status", "active", "active|disabled")
+	configAwsStsUpsertCmd.Flags().Bool("emit-env", false, "print export NBOX_AWS_ARN_MAP instead of persisting (local dev)")
 	configAwsSts.AddCommand(configAwsStsUpsertCmd, configAwsStsListCmd, configAwsStsRmCmd)
 
 	configApprole := &cobra.Command{Use: "approle", Short: "AppRoles M2M"}
-	configApproleGenerateCmd.Flags().String("name", "", "nombre del role")
-	configApproleGenerateCmd.Flags().StringSlice("roles", nil, "roles OPA")
-	configApproleGenerateCmd.Flags().StringSlice("cidrs", nil, "CIDRs permitidos (opcional)")
+	configApproleGenerateCmd.Flags().String("name", "", "role name")
+	configApproleGenerateCmd.Flags().StringSlice("roles", nil, "OPA roles")
+	configApproleGenerateCmd.Flags().StringSlice("cidrs", nil, "allowed CIDRs (optional)")
 	configApproleGenerateCmd.Flags().IntP("cost", "c", bcrypt.DefaultCost, "Bcrypt cost (4-31)")
-	configApprole.AddCommand(configApproleGenerateCmd, configApproleListCmd, configApproleRmCmd)
+	configApproleGenerateCmd.Flags().Bool("emit-env", false, "print export NBOX_APPROLE_ROLES instead of persisting (local dev)")
+	configApproleRotateCmd.Flags().IntP("cost", "c", bcrypt.DefaultCost, "Bcrypt cost (4-31)")
+	configApproleRotateCmd.Flags().Bool("emit-env", false, "print the secret_hash to append instead of persisting (local dev)")
+	configApprole.AddCommand(configApproleGenerateCmd, configApproleRotateCmd, configApproleListCmd, configApproleRmCmd)
 
 	configCmd.AddCommand(configUser, configAwsSts, configApprole)
 }

@@ -82,7 +82,7 @@ Esta guía cubre principalmente `nbox`. Para `entrypushd` y los agentes ver
     export NBOX_BUCKET_NAME=tu-bucket-nbox-development
     export NBOX_BASIC_AUTH_CREDENTIALS='{"user":{"password": "$2a$10$...", "roles": ["admin"], "status": "active"}}'
     ```
-    > **Nota**: Para generar el hash de la contraseña, usá `nbox-cli hasher <password>`.
+    > **Nota**: Para generar el hash de la contraseña usá `nbox-cli config user upsert --username admin --password '...' --emit-env`; el flag `--emit-env` imprime `export NBOX_BASIC_AUTH_CREDENTIALS=…` sin tocar DynamoDB.
 
 3.  **Instalar dependencias y herramientas**:
     ```shell
@@ -301,7 +301,7 @@ Eventos (publisher NATS, solo en `nbox`):
 
 #### `nbox-cli` — tooling de administración
 
-Orientado a flags/argumentos: `hasher`, `approle generate/rotate-secret`, `prefix` (routing de prefijos) y `config` (administración de la tabla de config dinámica). Ver [CLI de administración](#cli-de-administración-nbox-cli). Usa `AWS_REGION` y `--table`/`NBOX_CONFIG_TABLE_NAME`.
+Orientado a flags/argumentos: `prefix` (routing de prefijos) y `config` (administración de usuarios/AppRole/AWS-STS en la tabla de config dinámica; `--emit-env` para generar env vars localmente sin DynamoDB). Ver [CLI de administración](#cli-de-administración-nbox-cli). Usa `AWS_REGION` y `--table`/`NBOX_CONFIG_TABLE_NAME`.
 
 
 ### Desarrollo
@@ -335,17 +335,18 @@ los archivos generados y el endpoint `GET /swagger/` están documentados en
 Herramienta de administración para tareas operativas: generar credenciales,
 sembrar configuración y administrar la tabla de config dinámica. Se construye con
 `make build` (binario `cli`, invocado como `nbox-cli` en el PATH). El flag
-`--region` (`-r`, default `us-east-1`) es global.
+`--region` (`-r`) es global; si no se pasa, se usa `AWS_REGION`/resolución del SDK.
 
 | Comando | Para qué sirve |
 |---|---|
-| `nbox-cli hasher <password>` | Genera un bcrypt hash para pegar en `NBOX_BASIC_AUTH_CREDENTIALS`. |
-| `nbox-cli approle generate <nombre> --opa-role <rol>` | Crea una credencial M2M (`role_id` + `secret_id` + hash) e imprime el JSON para `NBOX_APPROLE_ROLES`. |
-| `nbox-cli approle rotate-secret` | Genera un nuevo `secret_id` + hash para rotar sin downtime (append al array `secret_hashes`). |
+| `nbox-cli config user upsert --username <u> --password <p> --roles <r> [--emit-env]` | Crea/actualiza un usuario Basic Auth en DynamoDB; `--emit-env` imprime `export NBOX_BASIC_AUTH_CREDENTIALS=…` para local dev sin tocar DynamoDB. |
+| `nbox-cli config approle generate --name <n> --roles <r> [--emit-env]` | Crea una credencial M2M (`role_id` + `secret_id` + hash) en DynamoDB; `--emit-env` imprime `export NBOX_APPROLE_ROLES=…` en lugar de persistir. |
+| `nbox-cli config approle rotate-secret <role_id>` \| `rotate-secret --emit-env` | Genera un nuevo `secret_id` + hash para rotar sin downtime (append al array `secret_hashes`); `--emit-env` no persiste: imprime el **fragmento** `SecretHash` para appendear a mano en `NBOX_APPROLE_ROLES` (no es el env var completo). |
+| `nbox-cli config aws-sts upsert --arn <arn> --roles <r> [--emit-env]` | Crea/actualiza un mapeo ARN→roles para el esquema AWS-STS; `--emit-env` imprime `export NBOX_AWS_ARN_MAP=…` sin tocar DynamoDB. |
+| `nbox-cli config <user\|aws-sts\|approle> <list\|rm>` | Lista o elimina entidades de auth de la tabla de config dinámica (DynamoDB). |
 | `nbox-cli prefix upsert --prefix <p> [--type <backend>] [--table <t>]` | Crea/actualiza una entrada de routing de prefijo en la tabla config. |
 | `nbox-cli prefix list [--json] [--table <t>]` | Lista todas las configuraciones de prefijo. |
 | `nbox-cli prefix rm <prefix> [--force] [--table <t>]` | Borra una configuración de prefijo. |
-| `nbox-cli config <user\|aws-sts\|approle> <upsert\|generate\|list\|rm>` | Administra la tabla de config dinámica (DynamoDB) **sin reiniciar** los servicios. |
 
 ### `nbox-cli config` — config dinámica sin reinicio
 
@@ -465,7 +466,7 @@ NBOX is organized using **Package-Oriented Design** combined with **Clean Archit
 cmd/
   nbox/          → HTTP API binary (fx wiring only)
   entrypushd/    → NATS subscriber + gRPC daemon (fx wiring only)
-  cli/           → admin CLI (hasher, approle, seed, config)
+  cli/           → admin CLI (prefix, config, seed)
 
 internal/
   entry/         → Entry domain: model, stores (DynamoDB/SSM), service, HTTP handler
@@ -534,10 +535,7 @@ reciben (fan-out).
 `authorization: <scheme> <base64(...)>`; el interceptor la valida, mintea un JWT
 interno (15 min, `aud=[nbox,entrypushd]`) y lo inyecta. Dos esquemas:
 
-- **AppRole** — `AppRole <base64(JSON{role_id,secret_id})>`. Credenciales estáticas
-  generadas con `nbox-cli approle generate` o `config approle generate`; el
-  `secret_id` se matchea contra bcrypt hashes. Soporta rotación sin downtime y
-  restricción por CIDR.
+- **AppRole** — `AppRole <base64(JSON{role_id,secret_id})>`. Credenciales estáticas generadas con `nbox-cli config approle generate [--emit-env]`; el `secret_id` se matchea contra bcrypt hashes. Soporta rotación sin downtime (`config approle rotate-secret`) y restricción por CIDR.
 - **AWS-STS** — `AWS-STS <base64(...)>`, estilo Vault iam. El agente firma un
   `GetCallerIdentity`; entrypushd lo reenvía a STS y matchea el ARN devuelto contra
   `NBOX_AWS_ARN_MAP`. Ideal para workloads en AWS (instance profile / IRSA).

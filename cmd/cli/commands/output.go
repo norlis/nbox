@@ -48,6 +48,17 @@ func exactArgs(n int) cobra.PositionalArgs {
 	}
 }
 
+// maxArgs is cobra.MaximumNArgs mapped to a usage error (exit 2), consistent
+// with exactArgs.
+func maxArgs(n int) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := cobra.MaximumNArgs(n)(cmd, args); err != nil {
+			return usageErrorf("%w", err)
+		}
+		return nil
+	}
+}
+
 // exitCode maps an error to a process exit status: 0 on success, 2 on usage
 // error, 1 on any other failure.
 func exitCode(err error) int {

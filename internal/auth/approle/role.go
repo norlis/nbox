@@ -5,7 +5,7 @@
 //
 // Bootstrap (admin):
 //
-//	nbox-cli approle generate watcher-agent --opa-role entrypushd
+//	nbox-cli config approle generate --name watcher-agent --roles entrypushd
 //
 // Authentication (agent → entrypushd gRPC):
 //
