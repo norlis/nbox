@@ -291,7 +291,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: insert or update templates on s3
+      deprecated: true
+      description: 'Deprecated: use POST /api/box/{service}/{stage}/{template}. Removed
+        from templates:write (admin only) to discourage use.'
       parameters:
       - description: Upsert template
         in: body
@@ -323,7 +325,7 @@ paths:
       security:
       - BasicAuth: []
       - BearerAuth: []
-      summary: Upsert templates
+      summary: Upsert templates (deprecated)
       tags:
       - templates
   /api/box/{service}/{stage}:

@@ -123,7 +123,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "insert or update templates on s3",
+                "description": "Deprecated: use POST /api/box/{service}/{stage}/{template}. Removed from templates:write (admin only) to discourage use.",
                 "consumes": [
                     "application/json"
                 ],
@@ -133,7 +133,8 @@ const docTemplate = `{
                 "tags": [
                     "templates"
                 ],
-                "summary": "Upsert templates",
+                "summary": "Upsert templates (deprecated)",
+                "deprecated": true,
                 "parameters": [
                     {
                         "description": "Upsert template",

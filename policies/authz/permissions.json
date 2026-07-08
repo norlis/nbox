@@ -11,9 +11,10 @@
     },
 
     "templates:read": {
-      "description": "Read all templates",
+      "description": "Read all templates (list, stage detail, template, HEAD)",
       "patterns": [
         "^GET:/api/box$",
+        "^GET:/api/box/[^/]+/[^/]+$",
         "^GET:/api/box/(.*)/(.*)/(.*)$",
         "^HEAD:/api/box/(.*)/(.*)/(.*)"
       ]
@@ -31,8 +32,22 @@
       "patterns": ["^GET:/api/box/(.*)/(.*)/(.*)/vars$"]
     },
     "templates:write": {
-      "description": "Create/update templates",
-      "patterns": ["^POST:/api/box$"]
+      "description": "Create/update a template via the path-addressed route (the body-based POST /api/box is deprecated and no longer granted)",
+      "patterns": ["^POST:/api/box/[^/]+/[^/]+/[^/]+$"]
+    },
+    "templates:write:non_production": {
+      "description": "Create/update templates only in non-production stages (path-scoped)",
+      "patterns": ["^POST:/api/box/[^/]+/(development|qa|beta|sandbox)/[^/]+$"]
+    },
+
+    "boxspec:validate": {
+      "description": "Validate content against the CUE specs (server-side evaluation)",
+      "patterns": ["^POST:/api/boxspec/validate$"]
+    },
+
+    "boxspec:admin": {
+      "description": "Reload CUE spec definitions from disk (mutates process state)",
+      "patterns": ["^POST:/api/boxspec/reload$"]
     },
 
     "entries:read:key": {
@@ -43,13 +58,30 @@
       "description": "Read entries only from development, QA, and global",
       "patterns": ["^GET:/api/entry/key\\?v=(development|qa|global)/(.*)"]
     },
+    "entries:read:key:vault": {
+      "description": "Read a single vault (passbox) index record",
+      "patterns": ["^GET:/api/entry/key\\?v=passbox(/|%2[Ff])(.*)"]
+    },
     "entries:read:prefix": {
-      "description": "List entries by prefix (tolerates extra query params like &leaves)",
-      "patterns": ["^GET:/api/entry/prefix\\?(.*&)?v=(.*)"]
+      "description": "List one level of entries by prefix (v as the only query param — the leaves mode requires entries:read:prefix:leaves)",
+      "patterns": ["^GET:/api/entry/prefix\\?v=[^&]*$"]
     },
     "entries:read:prefix:non_production": {
-      "description": "List entries only from development, QA, and global",
-      "patterns": ["^GET:/api/entry/prefix\\?v=(development|qa|global)/(.*)"]
+      "description": "List one level only for development/qa/global (no leaves mode)",
+      "patterns": ["^GET:/api/entry/prefix\\?v=(development|qa|global)/[^&]*$"]
+    },
+    "entries:read:prefix:vault": {
+      "description": "List vault (passbox) index records by prefix",
+      "patterns": ["^GET:/api/entry/prefix\\?(.*&)?v=passbox(/|%2[Ff])?(.*)"]
+    },
+    "entries:read:prefix:leaves": {
+      "description": "Flat-subtree listing (leaves mode) of entries by prefix — separate grant because it returns the whole subtree in one call",
+      "patterns": ["^GET:/api/entry/prefix\\?(.*&)?leaves(=[^&]*)?(&.*)?$"]
+    },
+
+    "entries:read:lookup": {
+      "description": "Bulk read of entry index records by key list (body-based: cannot be prefix-scoped at route level — grant only to roles that may read every prefix)",
+      "patterns": ["^POST:/api/entry/lookup$"]
     },
     "entries:read:export": {
       "description": "Export entries",
@@ -67,8 +99,12 @@
     },
 
     "secrets:read:value": {
-      "description": "Retrieve plain secret values (sensitive)",
-      "patterns": ["^GET:/api/entry/secret-value\\?v=(.*)"]
+      "description": "Resolve plaintext secret values for NON-vault keys (passbox excluded by root enumeration: RE2 has no negative lookahead)",
+      "patterns": ["^GET:/api/entry/resolve\\?v=(development|qa|beta|sandbox|production|dr|global)(/|%2[Ff])(.*)"]
+    },
+    "secrets:read:value:non_production": {
+      "description": "Resolve plaintext secret values for every root except beta/production/dr",
+      "patterns": ["^GET:/api/entry/resolve\\?v=(development|qa|sandbox|global)(/|%2[Ff])(.*)"]
     },
 
     "secrets:read:value:vault": {
@@ -79,6 +115,10 @@
     "tracking:read": {
       "description": "View entry history",
       "patterns": ["^GET:/api/track/key\\?v=(.*)"]
+    },
+    "tracking:read:vault": {
+      "description": "Change history of vault (passbox) keys",
+      "patterns": ["^GET:/api/track/key\\?(.*&)?v=passbox(/|%2[Ff])(.*)"]
     }
   }
 }

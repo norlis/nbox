@@ -3,7 +3,13 @@
     "GET:/health$",
     "POST:/api/auth/token$",
     "(GET|POST):/swagger/",
-    "GET:/api/static/environments$",
-    "GET:/api/me/permissions$"
+    "GET:/api/static/stages$",
+    "GET:/api/me/permissions$",
+    "GET:/api/prefix$",
+    "GET:/api/prefix/backends$",
+    "GET:/api/prefix/resolve\\?v=(.*)",
+    "GET:/api/box/schemas$",
+    "GET:/api/boxspec/specs$",
+    "GET:/api/boxspec/resolve\\?(.*)"
   ]
 }

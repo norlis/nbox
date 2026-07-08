@@ -25,7 +25,6 @@ func (h *Handler) Register(api *http.ServeMux) {
 	api.HandleFunc("GET /api/entry/key", h.GetByKey)
 	api.HandleFunc("GET /api/entry/prefix", h.ListByPrefix)
 	api.HandleFunc("DELETE /api/entry/key", h.DeleteKey)
-	api.HandleFunc("GET /api/entry/secret-value", h.Resolve) // Deprecated: use /api/entry/resolve
 	api.HandleFunc("GET /api/entry/resolve", h.Resolve)
 	api.HandleFunc("POST /api/entry/lookup", h.RetrieveMany)
 }

@@ -66,8 +66,9 @@ func (h *Handler) Register(api *http.ServeMux) {
 }
 
 // UpsertBox
-// @Summary Upsert templates
-// @Description insert or update templates on s3
+// @Summary Upsert templates (deprecated)
+// @Description Deprecated: use POST /api/box/{service}/{stage}/{template}. Removed from templates:write (admin only) to discourage use.
+// @Deprecated
 // @Tags templates
 // @Accept json
 // @Produce json
@@ -79,6 +80,8 @@ func (h *Handler) Register(api *http.ServeMux) {
 // @Failure 401 {object} problem.Detail "Unauthorized"
 // @Failure 500 {object} problem.Detail "Internal error"
 // @Router /api/box [post].
+//
+// Deprecated: superseded by UpsertBoxV2 (path-addressed route).
 func (h *Handler) UpsertBox(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

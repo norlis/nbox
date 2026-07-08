@@ -21,19 +21,25 @@
       "permissions": [
         "entries:read:key",
         "entries:read:prefix",
-        "entries:read:export"
+        "entries:read:prefix:leaves",
+        "entries:read:export",
+        "entries:read:lookup"
       ]
     },
 
     "editor": {
       "description": "Can read and write entries and templates",
       "permissions": [
+        "templates:read",
         "templates:write",
         "templates:read:build",
         "templates:read:vars",
         "entries:write",
         "entries:read:key",
-        "entries:read:prefix"
+        "entries:read:prefix",
+        "entries:read:prefix:leaves",
+        "entries:read:lookup",
+        "boxspec:validate"
       ]
     },
 
@@ -53,13 +59,53 @@
         "templates:read",
         "templates:read:build",
         "entries:read:key",
-        "entries:read:prefix"
+        "entries:read:prefix",
+        "entries:read:prefix:leaves",
+        "entries:read:lookup",
+        "boxspec:validate"
       ]
     },
 
     "entrypushd": {
       "description": "Service account for entrypushd binary (snapshot delivery + HPKE vault delivery)",
-      "permissions": ["entries:read:prefix", "secrets:read:value:vault"]
+      "permissions": ["entries:read:prefix", "entries:read:prefix:leaves", "secrets:read:value:vault"]
+    },
+
+    "vault_reader": {
+      "description": "Read vault (passbox) index and resolve its secret values — human counterpart of entrypushd's vault access",
+      "permissions": [
+        "entries:read:prefix:vault",
+        "entries:read:key:vault",
+        "secrets:read:value:vault",
+        "tracking:read:vault"
+      ]
+    },
+
+    "vault_operator": {
+      "description": "vault_reader + write entries (body-based: write scope is all prefixes until body-aware authz lands; passbox writes are forced secure by prefix-config)",
+      "permissions": [
+        "entries:read:prefix:vault",
+        "entries:read:key:vault",
+        "secrets:read:value:vault",
+        "tracking:read:vault",
+        "entries:write"
+      ]
+    },
+
+    "template_editor_nonprod": {
+      "description": "Read all templates; create/update only in non-production stages (path-scoped); validate against CUE specs",
+      "permissions": [
+        "templates:read",
+        "templates:write:non_production",
+        "templates:read:build",
+        "templates:read:vars",
+        "boxspec:validate"
+      ]
+    },
+
+    "secrets_reader_nonprod": {
+      "description": "Resolve plaintext secret values for every root except beta/production/dr (development/qa/sandbox/global)",
+      "permissions": ["secrets:read:value:non_production"]
     },
 
     "admin": {

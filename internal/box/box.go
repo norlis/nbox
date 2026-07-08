@@ -32,13 +32,18 @@ type TemplateMetadata struct {
 	UpdatedBy string    `dynamodbav:"UpdatedBy,omitempty"   json:"updatedBy,omitempty"`
 }
 
+// Deprecated: only used by the body-based POST /api/box route, superseded by
+// the path-addressed POST /api/box/{service}/{stage}/{template}. Remove with it.
 type CommandName string
 
+// Deprecated: see CommandName.
 var (
 	UpsertTemplate CommandName = "upsert.template"
 	UpsertVariable CommandName = "upsert.variables"
 )
 
+// Deprecated: envelope of the body-based POST /api/box route, superseded by
+// the path-addressed POST /api/box/{service}/{stage}/{template}. Remove with it.
 type Command[T any] struct {
 	Command CommandName `json:"command,omitempty"`
 	Payload T           `json:"payload"`
