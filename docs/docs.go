@@ -1145,6 +1145,12 @@ const docTemplate = `{
                         "name": "v",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "every real key under the prefix, flat (no folder markers / empty values)",
+                        "name": "leaves",
+                        "in": "query"
                     }
                 ],
                 "responses": {

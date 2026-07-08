@@ -85,7 +85,7 @@ var prefixUpsertCmd = &cobra.Command{
 		}
 		id := strings.Trim(p, "/")
 		set := changedOverrides(cmd)
-		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, by string) error {
 			cur, err := s.Get(cmd.Context(), config.KeyPrefixConfig.Kind, id)
 			if err != nil {
 				return err
@@ -103,7 +103,7 @@ var prefixUpsertCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			if err := s.Upsert(cmd.Context(), config.KeyPrefixConfig.Kind, id, data, "nbox-cli"); err != nil {
+			if err := s.Upsert(cmd.Context(), config.KeyPrefixConfig.Kind, id, data, by); err != nil {
 				return err
 			}
 			info("[ok] prefix %q saved (default=%s secure=%s allowed=%v)\n", id, cfg.TypeDefault, cfg.TypeSecure, cfg.TypeAllowed)
@@ -118,7 +118,7 @@ var prefixListCmd = &cobra.Command{
 	Example: "  nbox-cli prefix list --json",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		asJSON, _ := cmd.Flags().GetBool("json")
-		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, _ string) error {
 			recs, err := s.List(cmd.Context(), config.KeyPrefixConfig.Kind)
 			if err != nil {
 				return err
@@ -174,7 +174,7 @@ var prefixRmCmd = &cobra.Command{
 			info("cancelled\n")
 			return nil
 		}
-		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, _ string) error {
 			return s.Delete(cmd.Context(), config.KeyPrefixConfig.Kind, id)
 		}); err != nil {
 			return err

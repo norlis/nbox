@@ -22,8 +22,8 @@ func TestBuildPrefixConfig(t *testing.T) {
 	cur := &prefix.Config{Prefix: "global", TypeDefault: prefix.BackendParameterStore, TypeAllowed: []prefix.StorageBackendType{prefix.BackendDynamoDB}}
 	sec := "parameterstore_secure"
 	c = buildPrefixConfig("global", cur, prefixOverrides{typeSecure: &sec})
-	assert.Equal(t, prefix.BackendParameterStore, c.TypeDefault)                       // preserved
-	assert.Equal(t, prefix.BackendParameterStoreSecure, c.TypeSecure)                  // overridden
+	assert.Equal(t, prefix.BackendParameterStore, c.TypeDefault)                        // preserved
+	assert.Equal(t, prefix.BackendParameterStoreSecure, c.TypeSecure)                   // overridden
 	assert.Equal(t, []prefix.StorageBackendType{prefix.BackendDynamoDB}, c.TypeAllowed) // preserved
 
 	// --allowed is a list.
@@ -78,7 +78,7 @@ func TestConfirmDelete(t *testing.T) {
 
 	// Non-interactive without --force ⇒ refused (fail-closed).
 	_, err = confirmDelete(false, false, strings.NewReader(""), "x")
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	// Interactive: y ⇒ proceed, n ⇒ abort.
 	ok, err = confirmDelete(false, true, strings.NewReader("y\n"), "x")

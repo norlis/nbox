@@ -28,6 +28,7 @@ type fakeDynamo struct {
 func (f *fakeDynamo) Query(context.Context, *dynamodb.QueryInput, ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
 	return &dynamodb.QueryOutput{}, nil
 }
+
 func (f *fakeDynamo) PutItem(_ context.Context, in *dynamodb.PutItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
 	f.put = in
 	if f.putErr != nil {
@@ -35,9 +36,11 @@ func (f *fakeDynamo) PutItem(_ context.Context, in *dynamodb.PutItemInput, _ ...
 	}
 	return &dynamodb.PutItemOutput{}, nil
 }
+
 func (f *fakeDynamo) DeleteItem(context.Context, *dynamodb.DeleteItemInput, ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error) {
 	return &dynamodb.DeleteItemOutput{}, nil
 }
+
 func (f *fakeDynamo) GetItem(context.Context, *dynamodb.GetItemInput, ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
 	return &dynamodb.GetItemOutput{}, nil
 }
@@ -77,7 +80,7 @@ func TestConfigBacked_Upsert_PartialFailure(t *testing.T) {
 	}
 	stats, err := s.Upsert(context.Background(), items)
 
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Equal(t, len(items), stats.Failed)
 	assert.Equal(t, 0, stats.Processed)
 }

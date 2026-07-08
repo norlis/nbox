@@ -27,8 +27,9 @@ type fakeQueryClient struct {
 }
 
 type fakeItem struct {
-	Path string
-	Key  string
+	Path  string
+	Key   string
+	Value string
 }
 
 // Query filters items by Path equality.  The real code always builds its key
@@ -51,16 +52,40 @@ func (f *fakeQueryClient) Query(_ context.Context, params *dynamodb.QueryInput, 
 	var out []map[string]types.AttributeValue
 	for _, it := range f.items {
 		if it.Path == targetPath {
-			pAv, _ := attributevalue.Marshal(it.Path)
-			kAv, _ := attributevalue.Marshal(it.Key)
-			out = append(out, map[string]types.AttributeValue{
-				"Path": pAv,
-				"Key":  kAv,
-			})
+			r := record{
+				Path: it.Path,
+				recordBase: recordBase{
+					Key:   it.Key,
+					Value: []byte(it.Value),
+				},
+			}
+			av, _ := attributevalue.MarshalMap(r)
+			out = append(out, av)
 		}
 	}
 	// Return all matching items in a single page (no LastEvaluatedKey).
 	return &dynamodb.QueryOutput{Items: out}, nil
+}
+
+// Scan returns every item in a single page (no LastEvaluatedKey), marshalled
+// through the same record type production unmarshals.
+func (f *fakeQueryClient) Scan(_ context.Context, _ *dynamodb.ScanInput, _ ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var out []map[string]types.AttributeValue
+	for _, it := range f.items {
+		r := record{
+			Path: it.Path,
+			recordBase: recordBase{
+				Key:   it.Key,
+				Value: []byte(it.Value),
+			},
+		}
+		av, _ := attributevalue.MarshalMap(r)
+		out = append(out, av)
+	}
+	return &dynamodb.ScanOutput{Items: out}, nil
 }
 
 // GetItem is required by the interface but not exercised in Delete tests.
@@ -301,35 +326,60 @@ func TestDelete_DirectoryConvention(t *testing.T) {
 	}
 }
 
-// Árbol (layout DynamoDB real):
+// Tree (real DynamoDB layout):
 //
-//	(" ",            "passbox/")      ← carpeta raíz
-//	("passbox",      "av")            ← hoja
-//	("passbox",      "av2/")          ← carpeta
-//	("passbox/av2",  "account-pepe")  ← hoja (sub-nivel)
-//	(" ",            "rootleaf")      ← hoja con path en blanco (LeavesOnly la excluye)
+//	(" ",            "passbox/")      ← root folder marker
+//	("passbox",      "av")            ← leaf
+//	("passbox",      "av2/")          ← folder marker
+//	("passbox/av2",  "account-pepe")  ← nested leaf
+//	(" ",            "rootleaf")      ← root-level leaf
 func seedVaultTree() []fakeItem {
 	return []fakeItem{
-		{Path: " ", Key: "passbox/"},
-		{Path: "passbox", Key: "av"},
-		{Path: "passbox", Key: "av2/"},
-		{Path: "passbox/av2", Key: "account-pepe"},
-		{Path: " ", Key: "rootleaf"},
+		{Path: " ", Key: "passbox/", Value: ""},                  // root folder marker
+		{Path: "passbox", Key: "av", Value: "secret"},            // real leaf
+		{Path: "passbox", Key: "av2/", Value: ""},                // folder marker
+		{Path: "passbox/av2", Key: "account-pepe", Value: "tok"}, // nested leaf
+		{Path: " ", Key: "rootleaf", Value: "v"},                 // root-level leaf
 	}
 }
 
-func TestList_LeavesOnly_RecursiveNoFolders(t *testing.T) {
-	db, _ := newTestDynamoDB(seedVaultTree())
+// TestList_LeavesOnly_SubtreeRealKeys: LeavesOnly returns every real key under
+// pfx (flat subtree, via one Scan) — folder markers and empty values excluded,
+// exact segment boundary on the prefix.
+func TestList_LeavesOnly_SubtreeRealKeys(t *testing.T) {
+	db, _ := newTestDynamoDB([]fakeItem{
+		{Path: "qa", Key: "website-frontend/", Value: ""},                               // folder marker → excluded
+		{Path: "qa", Key: "flag", Value: "on"},                                          // real key → included
+		{Path: "qa", Key: "empty", Value: ""},                                           // empty value → excluded
+		{Path: "qa/website-frontend", Key: "next-public-instagram-token", Value: "tok"}, // nested → included (flat)
+		{Path: "qa2", Key: "other", Value: "x"},                                         // sibling prefix → excluded (boundary)
+	})
 
-	entries, err := db.List(context.Background(), "passbox/", entry.LeavesOnly())
+	got, err := db.List(context.Background(), "qa", entry.LeavesOnly())
 	require.NoError(t, err)
 
-	var keys []string
-	for _, e := range entries {
+	keys := make([]string, 0, len(got))
+	for _, e := range got {
 		keys = append(keys, e.Key)
 	}
-	require.ElementsMatch(t, []string{"passbox/av", "passbox/av2/account-pepe"}, keys,
-		"solo hojas de TODO el subárbol; sin carpetas")
+	require.ElementsMatch(t, []string{"qa/flag", "qa/website-frontend/next-public-instagram-token"}, keys)
+}
+
+// TestList_LeavesOnly_RootFallsBackToLevel: at "/" LeavesOnly is ignored and
+// the plain level listing is served — a flat dump of the whole table is never
+// exposed from root.
+func TestList_LeavesOnly_RootFallsBackToLevel(t *testing.T) {
+	db, _ := newTestDynamoDB(seedVaultTree())
+
+	got, err := db.List(context.Background(), "/", entry.LeavesOnly())
+	require.NoError(t, err)
+
+	keys := make([]string, 0, len(got))
+	for _, e := range got {
+		keys = append(keys, e.Key)
+	}
+	// Same as the default level listing at root: markers included, no recursion.
+	require.ElementsMatch(t, []string{"passbox/", "rootleaf"}, keys)
 }
 
 func TestList_LeavesOnly_EmptyIsNonNilSlice(t *testing.T) {

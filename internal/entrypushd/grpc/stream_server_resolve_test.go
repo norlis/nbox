@@ -35,7 +35,7 @@ func TestResolveOnce_DedupesConcurrentSameEvent(t *testing.T) {
 
 	const subs = 20
 	var wg sync.WaitGroup
-	for i := 0; i < subs; i++ {
+	for range subs {
 		wg.Go(func() {
 			pt, err := s.resolveOnce(context.Background(), "evt-1", "tok", "passbox/av2/test6")
 			if err != nil || pt != "pt_passbox/av2/test6" {

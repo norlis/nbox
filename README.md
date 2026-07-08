@@ -335,7 +335,7 @@ los archivos generados y el endpoint `GET /swagger/` están documentados en
 Herramienta de administración para tareas operativas: generar credenciales,
 sembrar configuración y administrar la tabla de config dinámica. Se construye con
 `make build` (binario `cli`, invocado como `nbox-cli` en el PATH). El flag
-`--region` (`-r`) es global; si no se pasa, se usa `AWS_REGION`/resolución del SDK.
+`--region` (`-r`) es global; si no se pasa, se usa `AWS_REGION`/resolución del SDK. Los writes registran en `updated_by` el ARN del principal AWS que ejecutó el comando (fallback `nbox-cli` si STS no responde).
 
 | Comando | Para qué sirve |
 |---|---|

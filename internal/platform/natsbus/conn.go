@@ -3,6 +3,7 @@ package natsbus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -14,7 +15,7 @@ import (
 // name identifies the client in NATS monitoring (e.g. "nbox", "entrypushd").
 func NewConn(url, name string, lc fx.Lifecycle, logger *slog.Logger) (*natsgo.Conn, error) {
 	if url == "" {
-		return nil, fmt.Errorf("natsbus: NATS_URL is required")
+		return nil, errors.New("natsbus: NATS_URL is required")
 	}
 	nc, err := natsgo.Connect(url,
 		natsgo.Name(name),

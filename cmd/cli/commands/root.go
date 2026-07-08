@@ -27,7 +27,6 @@ func Execute() {
 }
 
 func init() {
-
 	// Runtime errors shouldn't spew usage; flag-parse errors become usage
 	// errors (exit 2) while cobra still prints them to stderr.
 	rootCmd.SilenceUsage = true

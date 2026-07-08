@@ -11,6 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/google/uuid"
+	eventdrivenaws "github.com/norlis/event-driven/pkg/transport/aws"
 	"github.com/spf13/cobra"
 	"go.uber.org/fx"
 	"golang.org/x/crypto/bcrypt"
@@ -42,7 +43,7 @@ func tableName(cmd *cobra.Command) string {
 // withAdminStore runs a minimal fx app and hands a ready AdminStore to fn,
 // returning any error so the calling RunE maps it to an exit code. fx.Invoke
 // runs synchronously during Start, so opErr is set by the time Start returns.
-func withAdminStore(ctx context.Context, cmd *cobra.Command, fn func(*config.AdminStore) error) error {
+func withAdminStore(ctx context.Context, cmd *cobra.Command, fn func(s *config.AdminStore, by string) error) error {
 	table := tableName(cmd)
 	if table == "" {
 		return usageErrorf("set --table or NBOX_CONFIG_TABLE_NAME")
@@ -51,9 +52,10 @@ func withAdminStore(ctx context.Context, cmd *cobra.Command, fn func(*config.Adm
 	app := fx.New(
 		fx.NopLogger,
 		bootstrap.CommonModules,
-		fx.Invoke(func(client *dynamodb.Client, sd fx.Shutdowner) {
+		fx.Invoke(func(client *dynamodb.Client, id *eventdrivenaws.Identity, sd fx.Shutdowner) {
 			defer func() { _ = sd.Shutdown() }()
-			opErr = fn(config.NewAdminStore(client, table))
+			// Audit: attribute writes to the real AWS principal, not the tool.
+			opErr = fn(config.NewAdminStore(client, table), callerBy(ctx, id))
 		}),
 	)
 	if err := app.Start(ctx); err != nil {
@@ -136,7 +138,7 @@ var configUserUpsertCmd = &cobra.Command{
 			return nil
 		}
 
-		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, by string) error {
 			d := basicAuthData{Status: "active"}
 			cur, err := s.Get(cmd.Context(), config.KeyBasicAuth.Kind, username)
 			if err != nil {
@@ -158,7 +160,7 @@ var configUserUpsertCmd = &cobra.Command{
 			if cmd.Flags().Changed("status") {
 				d.Status, _ = cmd.Flags().GetString("status")
 			}
-			if err := s.Upsert(cmd.Context(), config.KeyBasicAuth.Kind, username, buildBasicAuthData(d.Password, d.Roles, d.Status), "nbox-cli"); err != nil {
+			if err := s.Upsert(cmd.Context(), config.KeyBasicAuth.Kind, username, buildBasicAuthData(d.Password, d.Roles, d.Status), by); err != nil {
 				return err
 			}
 			info("[ok] user %q saved (roles=%v status=%s)\n", username, d.Roles, d.Status)
@@ -171,7 +173,7 @@ var configUserListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List basic auth users (hashes not exposed)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, _ string) error {
 			recs, err := s.List(cmd.Context(), config.KeyBasicAuth.Kind)
 			if err != nil {
 				return err
@@ -191,7 +193,7 @@ var configUserRmCmd = &cobra.Command{
 	Short: "Delete a basic auth user",
 	Args:  exactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, _ string) error {
 			return s.Delete(cmd.Context(), config.KeyBasicAuth.Kind, args[0])
 		}); err != nil {
 			return err
@@ -220,7 +222,7 @@ var configAwsStsUpsertCmd = &cobra.Command{
 			emitEnv(config.KeyARNMap, arn, buildARNMapping(arn, name, roles, status))
 			return nil
 		}
-		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, by string) error {
 			// Merge onto the existing mapping: only passed flags override it.
 			m := awssts.ARNMapping{ARN: arn, Status: awssts.StatusActive}
 			cur, err := s.Get(cmd.Context(), config.KeyARNMap.Kind, arn)
@@ -242,7 +244,7 @@ var configAwsStsUpsertCmd = &cobra.Command{
 				m.Status = awssts.Status(st)
 			}
 			data := buildARNMapping(m.ARN, m.Name, m.Roles, string(m.Status))
-			if err := s.Upsert(cmd.Context(), config.KeyARNMap.Kind, arn, data, "nbox-cli"); err != nil {
+			if err := s.Upsert(cmd.Context(), config.KeyARNMap.Kind, arn, data, by); err != nil {
 				return err
 			}
 			info("[ok] arn %q saved (roles=%v status=%s)\n", arn, m.Roles, m.Status)
@@ -255,7 +257,7 @@ var configAwsStsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List ARN mappings",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, _ string) error {
 			recs, err := s.List(cmd.Context(), config.KeyARNMap.Kind)
 			if err != nil {
 				return err
@@ -275,7 +277,7 @@ var configAwsStsRmCmd = &cobra.Command{
 	Short: "Delete an ARN mapping",
 	Args:  exactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, _ string) error {
 			return s.Delete(cmd.Context(), config.KeyARNMap.Kind, args[0])
 		}); err != nil {
 			return err
@@ -316,8 +318,8 @@ var configApproleGenerateCmd = &cobra.Command{
 			printApproleCreds(roleID, secretID)
 			return nil
 		}
-		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
-			return s.Upsert(cmd.Context(), config.KeyAppRole.Kind, roleID, data, "nbox-cli")
+		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, by string) error {
+			return s.Upsert(cmd.Context(), config.KeyAppRole.Kind, roleID, data, by)
 		}); err != nil {
 			return err
 		}
@@ -364,7 +366,7 @@ var configApproleRotateCmd = &cobra.Command{
 			return usageErrorf("role_id required (or use --emit-env)")
 		}
 		roleID := args[0]
-		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, by string) error {
 			cur, err := s.Get(cmd.Context(), config.KeyAppRole.Kind, roleID)
 			if err != nil {
 				return err
@@ -381,7 +383,7 @@ var configApproleRotateCmd = &cobra.Command{
 			if mErr != nil {
 				return mErr
 			}
-			return s.Upsert(cmd.Context(), config.KeyAppRole.Kind, roleID, data, "nbox-cli")
+			return s.Upsert(cmd.Context(), config.KeyAppRole.Kind, roleID, data, by)
 		}); err != nil {
 			return err
 		}
@@ -395,7 +397,7 @@ var configApproleListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List AppRoles (secret_hashes not exposed)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, _ string) error {
 			recs, err := s.List(cmd.Context(), config.KeyAppRole.Kind)
 			if err != nil {
 				return err
@@ -416,7 +418,7 @@ var configApproleRmCmd = &cobra.Command{
 	Short: "Delete an AppRole",
 	Args:  exactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore) error {
+		if err := withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, _ string) error {
 			return s.Delete(cmd.Context(), config.KeyAppRole.Kind, args[0])
 		}); err != nil {
 			return err

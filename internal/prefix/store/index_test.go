@@ -1,7 +1,6 @@
 package store
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,11 +30,11 @@ func TestPrefixIndex_LPMAndNotFound(t *testing.T) {
 
 	// No candidate matches.
 	_, err = ix.ByPrefix("qa/whatever")
-	assert.True(t, errors.Is(err, entry.ErrEntryNotFound))
+	require.ErrorIs(t, err, entry.ErrEntryNotFound)
 
 	// Empty key.
 	_, err = ix.ByPrefix("/")
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	// List sorted.
 	list := ix.List()

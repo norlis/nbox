@@ -934,6 +934,11 @@ paths:
         name: v
         required: true
         type: string
+      - description: every real key under the prefix, flat (no folder markers / empty
+          values)
+        in: query
+        name: leaves
+        type: boolean
       produces:
       - application/json
       responses:

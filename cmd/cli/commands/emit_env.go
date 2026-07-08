@@ -8,7 +8,7 @@ import (
 )
 
 // formatExport builds a shell `export VAR='value'` line. Single-quotes are
-// escaped as '\'' so the line is safe to paste or eval.
+// escaped as '\” so the line is safe to paste or eval.
 func formatExport(envVar string, value []byte) string {
 	esc := strings.ReplaceAll(string(value), "'", `'\''`)
 	return fmt.Sprintf("export %s='%s'", envVar, esc)

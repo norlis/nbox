@@ -7,10 +7,9 @@ import (
 	"log/slog"
 	"time"
 
+	eventd "github.com/norlis/event-driven/pkg/event"
 	streamv1 "nbox/gen/stream/v1"
 	"nbox/internal/event"
-
-	eventd "github.com/norlis/event-driven/pkg/event"
 )
 
 // Publisher is the subset of the gRPC broker the handler depends on.

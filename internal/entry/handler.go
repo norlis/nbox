@@ -62,6 +62,7 @@ func (h *Handler) Upsert(w http.ResponseWriter, r *http.Request) {
 // @Tags entry
 // @Produce json
 // @Param v query string true "key path"
+// @Param leaves query bool false "every real key under the prefix, flat (no folder markers / empty values)"
 // @Security BasicAuth
 // @Security BearerAuth
 // @Success 200 {object} []Entry ""

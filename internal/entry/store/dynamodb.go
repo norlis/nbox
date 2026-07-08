@@ -7,16 +7,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"go.uber.org/zap"
 	"nbox/internal/application"
 	"nbox/internal/entry"
 	"nbox/internal/nbox"
 	platformaws "nbox/internal/platform/aws"
 	"nbox/internal/prefix"
+
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"go.uber.org/zap"
 )
 
 const (
@@ -25,11 +26,12 @@ const (
 )
 
 // dynamodbClientAPI is the minimal interface over *dynamodb.Client that DynamoDB uses
-// directly. It satisfies dynamodb.QueryAPIClient so that dynamodb.NewQueryPaginator
-// can accept it.
+// directly. It satisfies dynamodb.QueryAPIClient and dynamodb.ScanAPIClient so the
+// SDK paginators can accept it.
 type dynamodbClientAPI interface {
 	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
 	Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
+	Scan(ctx context.Context, params *dynamodb.ScanInput, optFns ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error)
 }
 
 // Compile-time assertion: *dynamodb.Client satisfies dynamodbClientAPI.
@@ -91,9 +93,15 @@ func (d *DynamoDB) RetrieveMany(ctx context.Context, keys []string) (map[string]
 		return make(map[string]*entry.Entry), nil
 	}
 
+	seen := make(map[string]struct{}, len(keys))
 	attributes := make([]map[string]types.AttributeValue, 0, len(keys))
 
 	for _, fullKey := range keys {
+		if _, dup := seen[fullKey]; dup {
+			continue
+		}
+		seen[fullKey] = struct{}{}
+
 		path, err := attributevalue.Marshal(d.pathUseCase.PathWithoutKey(fullKey))
 		if err != nil {
 			d.logger.Error("Failed to marshal path", zap.String("key", fullKey), zap.Error(err))
@@ -332,39 +340,60 @@ func (d *DynamoDB) listLevel(ctx context.Context, pfx string) ([]entry.Entry, er
 }
 
 // List returns entries under pfx. Default: a single level, folders included
-// (what the UI uses to navigate). With entry.LeavesOnly(): walks the whole
-// subtree and returns only leaves.
+// (what the UI uses to navigate). With entry.LeavesOnly(): every real key
+// under pfx, flat — folder markers and empty-value records are filtered out.
+// At root, LeavesOnly falls back to the level listing: a flat dump of the
+// whole table is never served from "/".
 func (d *DynamoDB) List(ctx context.Context, pfx string, opts ...entry.ListOption) ([]entry.Entry, error) {
-	if entry.NewListOptions(opts...).LeavesOnly {
+	if entry.NewListOptions(opts...).LeavesOnly && strings.Trim(strings.TrimSpace(pfx), "/") != "" {
 		return d.listLeaves(ctx, pfx)
 	}
 	return d.listLevel(ctx, pfx)
 }
 
-// listLeaves walks the subtree reusing listLevel per level: folders (Key
-// ending in "/", same rule the UI uses) are enqueued to descend and NOT
-// returned; blank-path records are excluded. Always returns a non-nil slice.
+// listLeaves returns every real key under pfx (flat subtree) via ONE paginated,
+// eventually consistent Scan filtered in memory: folder markers, empty-value
+// records and lock entries are dropped, with an exact segment boundary on pfx.
+// Each row stores its full directory in Path, so no tree walk is needed — the
+// old per-folder BFS issued O(folders) sequential Queries and took seconds.
 func (d *DynamoDB) listLeaves(ctx context.Context, pfx string) ([]entry.Entry, error) {
+	pfx = strings.Trim(strings.TrimSpace(pfx), "/")
+
+	paginator := dynamodb.NewScanPaginator(d.client, &dynamodb.ScanInput{
+		TableName: new(d.config.EntryTableName),
+	})
+
 	leaves := make([]entry.Entry, 0)
-	queue := []string{pfx}
-
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-
-		level, err := d.listLevel(ctx, current)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("dynamo scan: %w", err)
 		}
-		for _, e := range level {
-			if strings.HasSuffix(e.Key, "/") { // folder → descend, don't return
-				queue = append(queue, e.Key)
-				continue
+
+		var records []record
+		if err := attributevalue.UnmarshalListOfMaps(page.Items, &records); err != nil {
+			return nil, fmt.Errorf("unmarshal list: %w", err)
+		}
+
+		for i := range records {
+			r := &records[i]
+			if strings.HasSuffix(r.Key, "/") || strings.HasPrefix(r.Key, DynamoDBLockPrefix) {
+				continue // folder marker / lock entry
 			}
-			if strings.TrimSpace(e.Path) == "" { // blank-path record → exclude
-				continue
+			if strings.TrimSpace(string(r.Value)) == "" {
+				continue // empty value (the feature: real keys only)
 			}
-			leaves = append(leaves, e)
+			if pfx != "" && r.Path != pfx && !strings.HasPrefix(r.Path, pfx+"/") {
+				continue // outside the requested subtree (exact segment boundary)
+			}
+			leaves = append(leaves, entry.Entry{
+				Key:      d.pathUseCase.Concat(r.Path, r.Key),
+				ShortKey: r.Key,
+				Value:    string(r.Value),
+				Path:     r.Path,
+				Secure:   r.Metadata.Secure,
+				Metadata: &r.Metadata,
+			})
 		}
 	}
 	return leaves, nil
