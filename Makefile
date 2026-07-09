@@ -31,8 +31,9 @@ help:
 	@echo ""
 	@echo "## --- Ciclo de Vida del Build ---"
 	@echo "  build            Construye los binarios para todas las plataformas."
-	@echo "  amd64-build      Construye el binario para linux/amd64."
-	@echo "  arm64-build      Construye el binario para linux/arm64."
+	@echo "  <arch>-build             Compila los 3 binarios para <arch> (amd64|arm64); GOOS autodetectado."
+	@echo "  <arch>-build-nbox        Compila microservice + cli para <arch> (amd64|arm64)."
+	@echo "  <arch>-build-entrypushd  Compila entrypushd para <arch> (amd64|arm64)."
 	@echo "  clean            Elimina la carpeta de build."
 	@echo ""
 	@echo "## --- Calidad de Código ---"
@@ -133,15 +134,22 @@ build: clean
 	GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/windows/amd64/microservice ./cmd/nbox
 	GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/windows/amd64/cli     ./cmd/cli
 
-amd64-build:
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/microservice ./cmd/nbox
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/entrypushd  ./cmd/entrypushd
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/cli    ./cmd/cli
+# OS destino: autodetecta el del host (darwin en Mac, linux en el contenedor de build).
+# Override para cross-compile: GOOS=linux make arm64-build
+GOOS ?= $(shell go env GOOS)
 
-arm64-build:
-	GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/microservice ./cmd/nbox
-	GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/entrypushd  ./cmd/entrypushd
-	GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/cli    ./cmd/cli
+# make <arch>-build-nbox        → microservice + cli
+# make <arch>-build-entrypushd  → entrypushd
+%-build-nbox:
+	GOOS=$(GOOS) GOARCH=$* $(GOBUILD) $(LDFLAGS) -o ./build/$(GOOS)/$*/microservice ./cmd/nbox
+	GOOS=$(GOOS) GOARCH=$* $(GOBUILD) $(LDFLAGS) -o ./build/$(GOOS)/$*/cli          ./cmd/cli
+
+%-build-entrypushd:
+	GOOS=$(GOOS) GOARCH=$* $(GOBUILD) $(LDFLAGS) -o ./build/$(GOOS)/$*/entrypushd   ./cmd/entrypushd
+
+# make <arch>-build             → microservice + cli + entrypushd
+%-build: %-build-nbox %-build-entrypushd
+	@:
 
 clean:
 	@echo "==> Limpiando builds anteriores..."

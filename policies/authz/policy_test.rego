@@ -649,3 +649,23 @@ test_security_auditor_reads_everything_writes_nothing if {
 test_entrypushd_can_lookup if {
 	authz.allow with input as {"payload": {"roles": ["entrypushd"]}, "action": "POST:/api/entry/lookup"}
 }
+
+# ==============================================================================
+# AUTHENTICATED PSEUDO-ROLE (implicit, injected by policy.rego) + minimal whitelist
+# Real data: pins roles.json + permissions.json + whitelist.json content.
+# ==============================================================================
+
+test_authenticated_pseudo_role_grants_metadata if {
+	authz.allow with input as {"payload": {"roles": ["entries_editor"]}, "action": "GET:/api/prefix"}
+	authz.allow with input as {"payload": {"roles": ["templates_viewer"]}, "action": "GET:/api/static/stages"}
+	authz.allow with input as {"payload": {"roles": ["vault_reader"]}, "action": "GET:/api/me/permissions"}
+}
+
+test_unauthenticated_cannot_read_metadata if {
+	not authz.allow with input as {"payload": {"roles": []}, "action": "GET:/api/prefix"}
+	not authz.allow with input as {"payload": {"roles": []}, "action": "GET:/api/static/stages"}
+}
+
+test_health_stays_public if {
+	authz.allow with input as {"payload": {"roles": []}, "action": "GET:/health"}
+}

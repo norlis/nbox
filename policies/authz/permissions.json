@@ -10,6 +10,20 @@
       "patterns": ["^GET:/health$", "^GET:/test$"]
     },
 
+    "platform:read:metadata": {
+      "description": "Platform metadata every authenticated caller needs (stages, own permissions, prefix routing, template schemas, CUE specs)",
+      "patterns": [
+        "^GET:/api/static/stages$",
+        "^GET:/api/me/permissions$",
+        "^GET:/api/prefix$",
+        "^GET:/api/prefix/backends$",
+        "^GET:/api/prefix/resolve\\?v=(.*)",
+        "^GET:/api/box/schemas$",
+        "^GET:/api/boxspec/specs$",
+        "^GET:/api/boxspec/resolve\\?(.*)"
+      ]
+    },
+
     "templates:read": {
       "description": "Read all templates (list, stage detail, template, HEAD)",
       "patterns": [
@@ -99,8 +113,11 @@
     },
 
     "secrets:read:value": {
-      "description": "Resolve plaintext secret values for NON-vault keys (passbox excluded by root enumeration: RE2 has no negative lookahead)",
-      "patterns": ["^GET:/api/entry/resolve\\?v=(development|qa|beta|sandbox|production|dr|global)(/|%2[Ff])(.*)"]
+      "description": "Resolve plaintext secret values for NON-vault keys (passbox excluded by root enumeration: RE2 has no negative lookahead). secret-value is a deprecated alias of resolve.",
+      "patterns": [
+        "^GET:/api/entry/resolve\\?v=(development|qa|beta|sandbox|production|dr|global)(/|%2[Ff])(.*)",
+        "^GET:/api/entry/secret-value\\?v=(development|qa|beta|sandbox|production|dr|global)(/|%2[Ff])(.*)"
+      ]
     },
     "secrets:read:value:non_production": {
       "description": "Resolve plaintext secret values for every root except beta/production/dr",

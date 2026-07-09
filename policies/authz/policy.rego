@@ -13,7 +13,9 @@ import rego.v1
 # Caller roles as a set; defaults to {"anonymous"} when the payload carries none.
 default roles := {"anonymous"}
 
-roles := {role | some role in input.payload.roles} if {
+# Every authenticated caller also holds the implicit "authenticated" pseudo-role
+# (K8s system:authenticated style): base grants live in ONE role, never repeated.
+roles := ({role | some role in input.payload.roles} | {"authenticated"}) if {
 	count(input.payload.roles) > 0
 }
 

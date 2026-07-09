@@ -5,6 +5,11 @@
       "permissions": ["public:health"]
     },
 
+    "authenticated": {
+      "description": "Implicit pseudo-role injected by policy.rego for every authenticated caller - never assign it to users",
+      "permissions": ["platform:read:metadata"]
+    },
+
     "viewer": {
       "description": "Read-only access to non-production resources",
       "permissions": [

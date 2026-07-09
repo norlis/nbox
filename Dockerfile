@@ -34,42 +34,49 @@ RUN addgroup \
 RUN apk --update add ca-certificates
 
 
-# --- build from source ---
-FROM public.ecr.aws/docker/library/golang:1.26 AS prep-build
+# --- fuentes + deps (compartido, no compila) ---
+FROM public.ecr.aws/docker/library/golang:1.26 AS prep-src
 
 ARG TARGETARCH
 
 WORKDIR /workspace
-COPY go.mod .
-COPY go.sum .
+COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     go mod download -x
 
 COPY . .
 
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    make ${TARGETARCH}-build
-
-# microservice binary is published as `nbox`
-RUN mv /workspace/build/linux/${TARGETARCH}/microservice /workspace/nbox
-RUN mv /workspace/build/linux/${TARGETARCH}/entrypushd /workspace/entrypushd
-RUN mv /workspace/build/linux/${TARGETARCH}/cli /workspace/cli
-
-
-# --- copy pre-built binaries ---
-FROM scratch AS prep-copy
-
-WORKDIR /workspace
-
+# --- build nbox (microservice + cli) ---
+FROM prep-src AS prep-build-nbox
 ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=cache,target=/root/.cache/go-build \
+    make ${TARGETARCH}-build-nbox
+# microservice binary is published as `nbox`
+RUN mv build/linux/${TARGETARCH}/microservice nbox && \
+    mv build/linux/${TARGETARCH}/cli cli
 
+# --- build entrypushd ---
+FROM prep-src AS prep-build-entrypushd
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=cache,target=/root/.cache/go-build \
+    make ${TARGETARCH}-build-entrypushd
+RUN mv build/linux/${TARGETARCH}/entrypushd entrypushd
+
+# --- copy-mode: binarios pre-compilados fuera de Docker ---
+FROM scratch AS prep-copy-nbox
+ARG TARGETARCH
 COPY build/linux/${TARGETARCH}/microservice /workspace/nbox
+COPY build/linux/${TARGETARCH}/cli           /workspace/cli
+
+FROM scratch AS prep-copy-entrypushd
+ARG TARGETARCH
 COPY build/linux/${TARGETARCH}/entrypushd /workspace/entrypushd
-COPY build/linux/${TARGETARCH}/cli /workspace/cli
 
-
-# --- pick build or copy ---
-FROM prep-${BUILDMODE} AS package
+# --- selector build|copy por servicio ---
+FROM prep-${BUILDMODE}-nbox       AS package-nbox
+FROM prep-${BUILDMODE}-entrypushd AS package-entrypushd
 
 
 # --- shell tools for healthchecks/debug ---
@@ -101,7 +108,7 @@ USER ${USER_UID}:${USER_GID}
 # --- entrypushd: gRPC KVStream + SQS consumer (:9337) ---
 FROM runtime-base AS entrypushd
 
-COPY --from=package /workspace/entrypushd ./entrypushd
+COPY --from=package-entrypushd /workspace/entrypushd ./entrypushd
 COPY --from=busybox /bin/nc /bin/
 
 ENTRYPOINT ["./entrypushd"]
@@ -111,8 +118,8 @@ EXPOSE 9337
 # --- nbox: HTTP REST API (:7337) + cli  [default target] ---
 FROM runtime-base AS nbox
 
-COPY --from=package /workspace/nbox ./nbox
-COPY --from=package /workspace/cli /bin/cli
+COPY --from=package-nbox /workspace/nbox ./nbox
+COPY --from=package-nbox /workspace/cli /bin/cli
 COPY ./policies ./policies
 
 ENTRYPOINT ["./nbox"]

@@ -7,18 +7,20 @@ import (
 	"io"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+
+	"nbox/internal/application"
+	"nbox/internal/box"
+	"nbox/internal/box/store/spec"
+	"nbox/internal/nbox"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"go.uber.org/zap"
-	"nbox/internal/application"
-	"nbox/internal/box"
-	"nbox/internal/box/store/spec"
-	"nbox/internal/nbox"
 )
 
 // S3 implementa box.Store guardando templates en S3 y metadata en DynamoDB.
@@ -187,34 +189,39 @@ func (b *S3) UpsertBox(ctx context.Context, bx *box.Box) map[string]spec.Result 
 
 func (b *S3) List(ctx context.Context) ([]box.Box, error) {
 	boxes := map[string]box.Box{}
-	results := make([]box.Box, 0)
 
-	scan, err := b.dynamodbClient.Scan(ctx, &dynamodb.ScanInput{
-		TableName:              new(b.config.BoxTableName),
-		ReturnConsumedCapacity: types.ReturnConsumedCapacityTotal,
+	paginator := dynamodb.NewScanPaginator(b.dynamodbClient, &dynamodb.ScanInput{
+		TableName: new(b.config.BoxTableName),
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan DynamoDB table: %w", err)
-	}
 
-	for _, i := range scan.Items {
-		var record boxRecord
-		err = attributevalue.UnmarshalMap(i, &record)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
 		if err != nil {
+			return nil, fmt.Errorf("failed to scan DynamoDB table: %w", err)
+		}
+
+		var records []boxRecord
+		if err := attributevalue.UnmarshalListOfMaps(page.Items, &records); err != nil {
 			continue
 		}
-
-		_, ok := boxes[record.Service]
-		if !ok {
-			boxes[record.Service] = box.Box{Service: record.Service, Stage: map[string]box.Stage{}}
+		for _, record := range records {
+			if _, ok := boxes[record.Service]; !ok {
+				boxes[record.Service] = box.Box{Service: record.Service, Stage: map[string]box.Stage{}}
+			}
+			boxes[record.Service].Stage[record.Stage] = box.Stage{Template: record.Template, Metadata: record.Metadata}
 		}
-		boxes[record.Service].Stage[record.Stage] = box.Stage{Template: record.Template, Metadata: record.Metadata}
 	}
 
-	for _, bx := range boxes {
-		results = append(results, bx)
+	services := make([]string, 0, len(boxes))
+	for svc := range boxes {
+		services = append(services, svc)
 	}
+	sort.Strings(services)
 
+	results := make([]box.Box, 0, len(boxes))
+	for _, svc := range services {
+		results = append(results, boxes[svc])
+	}
 	return results, nil
 }
 

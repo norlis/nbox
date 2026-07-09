@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"net/http"
 
+	"nbox/internal/transport/httpx"
+
 	"github.com/norlis/httpgate/presenter"
 	_ "github.com/norlis/httpgate/problem"
-	"nbox/internal/transport/httpx"
 )
 
 type Handler struct {
@@ -26,6 +27,8 @@ func (h *Handler) Register(api *http.ServeMux) {
 	api.HandleFunc("GET /api/entry/prefix", h.ListByPrefix)
 	api.HandleFunc("DELETE /api/entry/key", h.DeleteKey)
 	api.HandleFunc("GET /api/entry/resolve", h.Resolve)
+	// Deprecated: legacy alias for /api/entry/resolve, kept for a client still on the old path. Remove once migrated.
+	api.HandleFunc("GET /api/entry/secret-value", h.Resolve)
 	api.HandleFunc("POST /api/entry/lookup", h.RetrieveMany)
 }
 
