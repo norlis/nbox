@@ -179,7 +179,7 @@ curl -X GET "http://localhost:7337/api/entry/resolve?v=global/example/email_pass
     --user "user:pass" | jq
 ```
 
-> `GET /api/entry/secret-value` está **deprecado** — usá `/api/entry/resolve`.
+> `GET /api/entry/secret-value` fue **eliminado** — usá `/api/entry/resolve`. `POST /api/box` (body) está **deprecado** — usá `POST /api/box/{service}/{stage}/{template}`.
 
 ### Gestión de Plantillas (Templates)
 

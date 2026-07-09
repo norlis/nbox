@@ -58,49 +58,49 @@ test_anonymous_cannot_access_api if {
 test_viewer_can_read_development_entries_key if {
 	authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "GET:/api/entry/key?v=development/app/config"}
 		with data.roles as {"viewer": {"permissions": ["entries:read:key:non_production"]}}
-		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|global)/(.*)"]}}
+		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|sandbox|global)/(.*)"]}}
 }
 
 test_viewer_can_read_qa_entries_key if {
 	authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "GET:/api/entry/key?v=qa/app/config"}
 		with data.roles as {"viewer": {"permissions": ["entries:read:key:non_production"]}}
-		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|global)/(.*)"]}}
+		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|sandbox|global)/(.*)"]}}
 }
 
 test_viewer_can_read_global_entries_key if {
 	authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "GET:/api/entry/key?v=global/app/config"}
 		with data.roles as {"viewer": {"permissions": ["entries:read:key:non_production"]}}
-		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|global)/(.*)"]}}
+		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|sandbox|global)/(.*)"]}}
 }
 
 test_viewer_cannot_read_production_entries_key if {
 	not authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "GET:/api/entry/key?v=production/app/config"}
 		with data.roles as {"viewer": {"permissions": ["entries:read:key:non_production"]}}
-		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|global)/(.*)"]}}
+		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|sandbox|global)/(.*)"]}}
 }
 
 test_viewer_can_read_development_entries_prefix if {
 	authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "GET:/api/entry/prefix?v=development/app"}
 		with data.roles as {"viewer": {"permissions": ["entries:read:prefix:non_production"]}}
-		with data.permissions as {"entries:read:prefix:non_production": {"patterns": ["^GET:/api/entry/prefix\\?v=(development|qa|global)/(.*)"]}}
+		with data.permissions as {"entries:read:prefix:non_production": {"patterns": ["^GET:/api/entry/prefix\\?v=(development|qa|sandbox|global)/(.*)"]}}
 }
 
 test_viewer_cannot_read_production_entries_prefix if {
 	not authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "GET:/api/entry/prefix?v=production/app"}
 		with data.roles as {"viewer": {"permissions": ["entries:read:prefix:non_production"]}}
-		with data.permissions as {"entries:read:prefix:non_production": {"patterns": ["^GET:/api/entry/prefix\\?v=(development|qa|global)/(.*)"]}}
+		with data.permissions as {"entries:read:prefix:non_production": {"patterns": ["^GET:/api/entry/prefix\\?v=(development|qa|sandbox|global)/(.*)"]}}
 }
 
 test_viewer_can_read_non_production_templates if {
 	authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "GET:/api/box/myapp/development/task.json"}
 		with data.roles as {"viewer": {"permissions": ["templates:read:non_production"]}}
-		with data.permissions as {"templates:read:non_production": {"patterns": ["^GET:/api/box/(.*)/(qa|development)/[^/]+\\.json$"]}}
+		with data.permissions as {"templates:read:non_production": {"patterns": ["^GET:/api/box/(.*)/(development|qa|sandbox|global)/[^/]+\\.json$"]}}
 }
 
 test_viewer_cannot_read_production_templates if {
 	not authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "GET:/api/box/myapp/production/task.json"}
 		with data.roles as {"viewer": {"permissions": ["templates:read:non_production"]}}
-		with data.permissions as {"templates:read:non_production": {"patterns": ["^GET:/api/box/(.*)/(qa|development)/[^/]+\\.json$"]}}
+		with data.permissions as {"templates:read:non_production": {"patterns": ["^GET:/api/box/(.*)/(development|qa|sandbox|global)/[^/]+\\.json$"]}}
 }
 
 test_viewer_can_read_tracking if {
@@ -112,13 +112,13 @@ test_viewer_can_read_tracking if {
 test_viewer_cannot_write_entries if {
 	not authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "POST:/api/entry"}
 		with data.roles as {"viewer": {"permissions": ["entries:read:key:non_production"]}}
-		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|global)/(.*)"]}}
+		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|sandbox|global)/(.*)"]}}
 }
 
 test_viewer_cannot_delete_entries if {
 	not authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "DELETE:/api/entry/key?v=development/app/config"}
 		with data.roles as {"viewer": {"permissions": ["entries:read:key:non_production"]}}
-		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|global)/(.*)"]}}
+		with data.permissions as {"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|sandbox|global)/(.*)"]}}
 }
 
 # ==============================================================================
@@ -331,7 +331,7 @@ test_multiple_roles_viewer_and_secrets_reader if {
 			"secrets_reader": {"permissions": ["secrets:read:value"]},
 		}
 		with data.permissions as {
-			"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|global)/(.*)"]},
+			"entries:read:key:non_production": {"patterns": ["^GET:/api/entry/key\\?v=(development|qa|sandbox|global)/(.*)"]},
 			"secrets:read:value": {"patterns": ["^GET:/api/entry/resolve\\?v=(development|qa|beta|sandbox|production|dr|global)(/|%2[Ff])(.*)"]},
 		}
 }
@@ -526,12 +526,16 @@ test_entrypushd_plain_prefix_still_allowed if {
 }
 
 test_viewer_cannot_use_leaves_mode if {
-	authz.allow with input as {"action": "GET:/api/entry/prefix?v=qa/app", "payload": {"roles": ["viewer"]}}
-	not authz.allow with input as {"action": "GET:/api/entry/prefix?v=qa/app&leaves", "payload": {"roles": ["viewer"]}}
+	authz.allow with input as {"action": "GET:/api/entry/prefix?v=qa/app", "payload": {"roles": ["entries_reader_nonprod"]}}
+	not authz.allow with input as {"action": "GET:/api/entry/prefix?v=qa/app&leaves", "payload": {"roles": ["entries_reader_nonprod"]}}
 }
 
-test_viewer_prod_can_use_leaves_mode if {
-	authz.allow with input as {"action": "GET:/api/entry/prefix?v=production/app&leaves", "payload": {"roles": ["viewer_prod"]}}
+test_leaves_mode_restricted_to_entrypushd if {
+	# leaves is held ONLY by entrypushd (and admin via catch-all)
+	not authz.allow with input as {"action": "GET:/api/entry/prefix?v=production/app&leaves", "payload": {"roles": ["entries_reader"]}}
+	not authz.allow with input as {"action": "GET:/api/entry/prefix?v=production/app&leaves", "payload": {"roles": ["templates_publisher"]}}
+	not authz.allow with input as {"action": "GET:/api/entry/prefix?v=qa/app&leaves", "payload": {"roles": ["cicd"]}}
+	authz.allow with input as {"action": "GET:/api/entry/prefix?v=production/app&leaves", "payload": {"roles": ["admin"]}}
 }
 
 test_leaves_word_in_value_is_not_leaves_mode if {
@@ -582,32 +586,32 @@ test_secrets_reader_nonprod_cannot_resolve_beta_production_dr_vault if {
 	not authz.allow with input as {"payload": {"roles": ["secrets_reader_nonprod"]}, "action": "GET:/api/entry/resolve?v=passbox/banking/api-key"}
 }
 
-test_template_editor_nonprod_can_write_non_production if {
-	authz.allow with input as {"payload": {"roles": ["template_editor_nonprod"]}, "action": "POST:/api/box/myapp/qa/task.json"}
-	authz.allow with input as {"payload": {"roles": ["template_editor_nonprod"]}, "action": "POST:/api/box/myapp/sandbox/task.json"}
+test_templates_publisher_nonprod_can_write_non_production if {
+	authz.allow with input as {"payload": {"roles": ["templates_publisher_nonprod"]}, "action": "POST:/api/box/myapp/qa/task.json"}
+	authz.allow with input as {"payload": {"roles": ["templates_publisher_nonprod"]}, "action": "POST:/api/box/myapp/sandbox/task.json"}
 }
 
-test_template_editor_nonprod_cannot_write_production_or_v1 if {
-	not authz.allow with input as {"payload": {"roles": ["template_editor_nonprod"]}, "action": "POST:/api/box/myapp/production/task.json"}
-	not authz.allow with input as {"payload": {"roles": ["template_editor_nonprod"]}, "action": "POST:/api/box"}
+test_templates_publisher_nonprod_cannot_write_production_or_v1 if {
+	not authz.allow with input as {"payload": {"roles": ["templates_publisher_nonprod"]}, "action": "POST:/api/box/myapp/production/task.json"}
+	not authz.allow with input as {"payload": {"roles": ["templates_publisher_nonprod"]}, "action": "POST:/api/box"}
 }
 
-test_template_editor_nonprod_can_validate_boxspec if {
-	authz.allow with input as {"payload": {"roles": ["template_editor_nonprod"]}, "action": "POST:/api/boxspec/validate"}
+test_templates_publisher_nonprod_can_validate_boxspec if {
+	authz.allow with input as {"payload": {"roles": ["templates_publisher_nonprod"]}, "action": "POST:/api/boxspec/validate"}
 }
 
-test_editor_gains_lookup_stage_detail_and_validate if {
-	authz.allow with input as {"payload": {"roles": ["editor"]}, "action": "POST:/api/entry/lookup"}
-	authz.allow with input as {"payload": {"roles": ["editor"]}, "action": "GET:/api/box/myapp/qa"}
-	authz.allow with input as {"payload": {"roles": ["editor"]}, "action": "POST:/api/boxspec/validate"}
+test_entries_reader_and_templates_publisher_bundle if {
+	authz.allow with input as {"payload": {"roles": ["entries_reader"]}, "action": "POST:/api/entry/lookup"}
+	authz.allow with input as {"payload": {"roles": ["templates_publisher"]}, "action": "GET:/api/box/myapp/qa"}
+	authz.allow with input as {"payload": {"roles": ["templates_publisher"]}, "action": "POST:/api/boxspec/validate"}
 }
 
-test_viewer_prod_gains_lookup if {
-	authz.allow with input as {"payload": {"roles": ["viewer_prod"]}, "action": "POST:/api/entry/lookup"}
+test_entries_reader_can_lookup if {
+	authz.allow with input as {"payload": {"roles": ["entries_reader"]}, "action": "POST:/api/entry/lookup"}
 }
 
-test_viewer_cannot_lookup if {
-	not authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "POST:/api/entry/lookup"}
+test_entries_reader_nonprod_cannot_lookup if {
+	not authz.allow with input as {"payload": {"roles": ["entries_reader_nonprod"]}, "action": "POST:/api/entry/lookup"}
 }
 
 test_cicd_can_validate_but_not_reload if {
@@ -616,8 +620,32 @@ test_cicd_can_validate_but_not_reload if {
 }
 
 test_stage_detail_two_segment_boundary if {
-	# viewer reaches stage detail via its full templates:read (2-segment pattern)
-	authz.allow with input as {"payload": {"roles": ["viewer"]}, "action": "GET:/api/box/myapp/qa"}
+	# templates_viewer reaches stage detail via its full templates:read (2-segment pattern)
+	authz.allow with input as {"payload": {"roles": ["templates_viewer"]}, "action": "GET:/api/box/myapp/qa"}
 	# but a 2-segment pattern must not swallow deeper routes' authorization semantics
 	not authz.allow with input as {"payload": {"roles": ["secrets_reader_nonprod"]}, "action": "GET:/api/box/myapp/qa"}
+}
+
+test_cicd_can_resolve_non_vault_secrets if {
+	authz.allow with input as {"payload": {"roles": ["cicd"]}, "action": "GET:/api/entry/resolve?v=production/app/password"}
+	not authz.allow with input as {"payload": {"roles": ["cicd"]}, "action": "GET:/api/entry/resolve?v=passbox/banking/api-key"}
+}
+
+test_entries_editor_one_level_only if {
+	authz.allow with input as {"payload": {"roles": ["entries_editor"]}, "action": "POST:/api/entry"}
+	authz.allow with input as {"payload": {"roles": ["entries_editor"]}, "action": "GET:/api/entry/prefix?v=production/app"}
+	not authz.allow with input as {"payload": {"roles": ["entries_editor"]}, "action": "GET:/api/entry/prefix?v=production/app&leaves"}
+	not authz.allow with input as {"payload": {"roles": ["entries_editor"]}, "action": "POST:/api/entry/lookup"}
+}
+
+test_security_auditor_reads_everything_writes_nothing if {
+	authz.allow with input as {"payload": {"roles": ["security_auditor"]}, "action": "GET:/api/entry/resolve?v=production/app/password"}
+	authz.allow with input as {"payload": {"roles": ["security_auditor"]}, "action": "GET:/api/entry/resolve?v=passbox/banking/api-key"}
+	authz.allow with input as {"payload": {"roles": ["security_auditor"]}, "action": "GET:/api/track/key?v=passbox/banking/api-key"}
+	not authz.allow with input as {"payload": {"roles": ["security_auditor"]}, "action": "POST:/api/entry"}
+	not authz.allow with input as {"payload": {"roles": ["security_auditor"]}, "action": "POST:/api/box/svc/qa/t.json"}
+}
+
+test_entrypushd_can_lookup if {
+	authz.allow with input as {"payload": {"roles": ["entrypushd"]}, "action": "POST:/api/entry/lookup"}
 }

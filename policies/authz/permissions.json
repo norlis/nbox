@@ -21,7 +21,7 @@
     },
     "templates:read:non_production": {
       "description": "Read templates only from QA and development",
-      "patterns": ["^GET:/api/box/(.*)/(qa|development)/[^/]+\\.json$"]
+      "patterns": ["^GET:/api/box/(.*)/(development|qa|sandbox|global)/[^/]+\\.json$"]
     },
     "templates:read:build": {
       "description": "View template build output",
@@ -37,7 +37,7 @@
     },
     "templates:write:non_production": {
       "description": "Create/update templates only in non-production stages (path-scoped)",
-      "patterns": ["^POST:/api/box/[^/]+/(development|qa|beta|sandbox)/[^/]+$"]
+      "patterns": ["^POST:/api/box/[^/]+/(development|qa|sandbox|global)/[^/]+$"]
     },
 
     "boxspec:validate": {
@@ -56,7 +56,7 @@
     },
     "entries:read:key:non_production": {
       "description": "Read entries only from development, QA, and global",
-      "patterns": ["^GET:/api/entry/key\\?v=(development|qa|global)/(.*)"]
+      "patterns": ["^GET:/api/entry/key\\?v=(development|qa|sandbox|global)/(.*)"]
     },
     "entries:read:key:vault": {
       "description": "Read a single vault (passbox) index record",
@@ -68,7 +68,7 @@
     },
     "entries:read:prefix:non_production": {
       "description": "List one level only for development/qa/global (no leaves mode)",
-      "patterns": ["^GET:/api/entry/prefix\\?v=(development|qa|global)/[^&]*$"]
+      "patterns": ["^GET:/api/entry/prefix\\?v=(development|qa|sandbox|global)/[^&]*$"]
     },
     "entries:read:prefix:vault": {
       "description": "List vault (passbox) index records by prefix",
