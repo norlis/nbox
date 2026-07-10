@@ -39,6 +39,11 @@ func (c *ConfigBacked) List(_ context.Context) ([]prefix.Config, error) {
 func (c *ConfigBacked) Upsert(ctx context.Context, prefixes []prefix.Config) (prefix.UpsertStats, error) {
 	stats := prefix.UpsertStats{}
 	for _, p := range prefixes {
+		if err := p.Validate(); err != nil {
+			stats.Failed++
+			continue
+		}
+		p.NormalizeAllowed()
 		data, err := json.Marshal(p)
 		if err != nil {
 			stats.Failed++

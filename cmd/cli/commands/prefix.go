@@ -37,8 +37,9 @@ type prefixOverrides struct {
 }
 
 // buildPrefixConfig merges overrides onto cur (nil ⇒ create with dynamodb
-// default). Pure → unit-tested; the command keeps only I/O.
-func buildPrefixConfig(id string, cur *prefix.Config, set prefixOverrides) prefix.Config {
+// default), validates backends, and normalizes TypeAllowed. Pure → unit-tested;
+// the command keeps only I/O.
+func buildPrefixConfig(id string, cur *prefix.Config, set prefixOverrides) (prefix.Config, error) {
 	cfg := prefix.Config{Prefix: id, TypeDefault: prefix.BackendDynamoDB}
 	if cur != nil {
 		cfg = *cur
@@ -53,7 +54,11 @@ func buildPrefixConfig(id string, cur *prefix.Config, set prefixOverrides) prefi
 	if set.allowed != nil {
 		cfg.TypeAllowed = toBackends(*set.allowed)
 	}
-	return cfg
+	if err := cfg.Validate(); err != nil {
+		return prefix.Config{}, err
+	}
+	cfg.NormalizeAllowed()
+	return cfg, nil
 }
 
 // changedOverrides reads only the flags cobra reports as Changed.
@@ -98,7 +103,10 @@ var prefixUpsertCmd = &cobra.Command{
 				}
 				curCfg = &c
 			}
-			cfg := buildPrefixConfig(id, curCfg, set)
+			cfg, err := buildPrefixConfig(id, curCfg, set)
+			if err != nil {
+				return usageErrorf("%v", err)
+			}
 			data, err := json.Marshal(cfg)
 			if err != nil {
 				return err

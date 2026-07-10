@@ -13,23 +13,32 @@ import (
 )
 
 func TestBuildPrefixConfig(t *testing.T) {
-	// Create with no overrides ⇒ dynamodb default.
-	c := buildPrefixConfig("global", nil, prefixOverrides{})
+	// Create sin overrides ⇒ default dynamodb, allowed normalizado = [dynamodb].
+	c, err := buildPrefixConfig("global", nil, prefixOverrides{})
+	require.NoError(t, err)
 	assert.Equal(t, prefix.BackendDynamoDB, c.TypeDefault)
 	assert.Equal(t, "global", c.Prefix)
+	assert.Equal(t, []prefix.StorageBackendType{prefix.BackendDynamoDB}, c.TypeAllowed)
 
-	// Merge: change only --secure, preserve the rest.
+	// Merge: cambia solo --secure; allowed = default + secure + existentes, dedup.
 	cur := &prefix.Config{Prefix: "global", TypeDefault: prefix.BackendParameterStore, TypeAllowed: []prefix.StorageBackendType{prefix.BackendDynamoDB}}
 	sec := "parameterstore_secure"
-	c = buildPrefixConfig("global", cur, prefixOverrides{typeSecure: &sec})
-	assert.Equal(t, prefix.BackendParameterStore, c.TypeDefault)                        // preserved
-	assert.Equal(t, prefix.BackendParameterStoreSecure, c.TypeSecure)                   // overridden
-	assert.Equal(t, []prefix.StorageBackendType{prefix.BackendDynamoDB}, c.TypeAllowed) // preserved
+	c, err = buildPrefixConfig("global", cur, prefixOverrides{typeSecure: &sec})
+	require.NoError(t, err)
+	assert.Equal(t, prefix.BackendParameterStore, c.TypeDefault)
+	assert.Equal(t, prefix.BackendParameterStoreSecure, c.TypeSecure)
+	assert.Equal(t, []prefix.StorageBackendType{prefix.BackendParameterStore, prefix.BackendParameterStoreSecure, prefix.BackendDynamoDB}, c.TypeAllowed)
 
-	// --allowed is a list.
+	// --allowed lista: default (dynamodb) inyectado primero, dedup.
 	al := []string{"parameterstore_secure", "dynamodb"}
-	c = buildPrefixConfig("global", nil, prefixOverrides{allowed: &al})
-	assert.Equal(t, toBackends(al), c.TypeAllowed)
+	c, err = buildPrefixConfig("global", nil, prefixOverrides{allowed: &al})
+	require.NoError(t, err)
+	assert.Equal(t, []prefix.StorageBackendType{prefix.BackendDynamoDB, prefix.BackendParameterStoreSecure}, c.TypeAllowed)
+
+	// Backend inválido ⇒ error.
+	bad := "garbage"
+	_, err = buildPrefixConfig("global", nil, prefixOverrides{typeDefault: &bad})
+	assert.Error(t, err)
 }
 
 func TestApplyRegion(t *testing.T) {
