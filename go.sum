@@ -192,6 +192,8 @@ github.com/norlis/event-driven v1.0.0-beta.5 h1:1WgHfP7vwLWmoG1cI8y+CSW97tyDHOJw
 github.com/norlis/event-driven v1.0.0-beta.5/go.mod h1:x374eB6Mi9qxNy+qoa4qiy+yQqPM72W3WBb/Jcv3gSY=
 github.com/norlis/httpgate v1.0.0-beta.1 h1:k0D7pzAWQPIJDfEUL5x9KiHMQrv+1kZu7/c5DTeO1pI=
 github.com/norlis/httpgate v1.0.0-beta.1/go.mod h1:2KFj6a58MjPIUyJy16X7a14ZOR/brlA/q7tfcZY7Pg8=
+github.com/norlis/httpgate v1.0.0 h1:rKvpFvYEKkfrN0yjijv7pp6fMbeWr3i29cZ2WALXMRQ=
+github.com/norlis/httpgate v1.0.0/go.mod h1:2KFj6a58MjPIUyJy16X7a14ZOR/brlA/q7tfcZY7Pg8=
 github.com/open-policy-agent/opa v1.17.0 h1:TMm6bCyb3CEL4wjXsXn1d/kBSBbjF+5sEIyzQvbJiEw=
 github.com/open-policy-agent/opa v1.17.0/go.mod h1:lcuZYSlqQpXFzsA6EJCELmfR5+nNOpZYX+eo7xaIIlk=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=

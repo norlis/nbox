@@ -15,6 +15,10 @@ const (
 	EntrySecretRead Type = "nbox.entry.secret.read"
 	TemplateCreated Type = "nbox.template.created"
 	TemplateUpdated Type = "nbox.template.updated"
+	// Keepalive is the application-level heartbeat emitted by entrypushd
+	// on otherwise-idle Watch streams so L7 proxies (ALB) don't idle-kill
+	// them. Carries no subject or payload; consumers must skip it.
+	Keepalive Type = "nbox.keepalive"
 )
 
 type Event struct {

@@ -1661,7 +1661,6 @@ const docTemplate = `{
                     }
                 },
                 "typeAllowed": {
-                    "description": "TODO: Deprecated",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/internal_prefix.StorageBackendType"

@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/ecdh"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/sync/singleflight"
@@ -31,23 +33,29 @@ type Snapshotter interface {
 // gRPC stream until the client disconnects.
 type StreamServer struct {
 	streamv1.UnimplementedKVStreamServer
-	broker   *Broker
-	snapshot Snapshotter // nil => snapshot disabled (deltas only)
-	logger   *slog.Logger
-	sf       singleflight.Group // dedupes concurrent same-event vault resolves
+	broker            *Broker
+	snapshot          Snapshotter // nil => snapshot disabled (deltas only)
+	logger            *slog.Logger
+	sf                singleflight.Group // dedupes concurrent same-event vault resolves
+	keepaliveInterval time.Duration      // 0 => heartbeat disabled
 }
+
+// KeepaliveInterval is the heartbeat period as a named type so fx can
+// wire it unambiguously (same pattern as ListenAddr/HMACKey). 0 disables.
+type KeepaliveInterval time.Duration
 
 // NewStreamServer builds a StreamServer backed by the given Broker. If
 // snapshot is nil, Watch skips the snapshot phase and streams deltas only
 // (retro-compatible with deployments without ENTRYPUSHD_NBOX_URL).
-func NewStreamServer(broker *Broker, snapshot Snapshotter, logger *slog.Logger) *StreamServer {
+func NewStreamServer(broker *Broker, snapshot Snapshotter, logger *slog.Logger, keepalive KeepaliveInterval) *StreamServer {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
 	return &StreamServer{
-		broker:   broker,
-		snapshot: snapshot,
-		logger:   logger.With(slog.String("component", "stream-server")),
+		broker:            broker,
+		snapshot:          snapshot,
+		logger:            logger.With(slog.String("component", "stream-server")),
+		keepaliveInterval: time.Duration(keepalive),
 	}
 }
 
@@ -90,11 +98,25 @@ func (s *StreamServer) Watch(req *streamv1.WatchRequest, stream streamv1.KVStrea
 		}
 	}
 
+	// Heartbeat: keeps the stream's L7 path (ALB) from idle-killing it.
+	// Starts after the snapshot burst (already continuous DATA). A nil
+	// channel (disabled) is an inert select case.
+	var keepalive <-chan time.Time
+	if s.keepaliveInterval > 0 {
+		t := time.NewTicker(s.keepaliveInterval)
+		defer t.Stop()
+		keepalive = t.C
+	}
+
 	// (3) drain live deltas (including any buffered during the snapshot).
 	for {
 		select {
 		case <-stream.Context().Done():
 			return nil
+		case <-keepalive:
+			if err := stream.Send(keepaliveEvent()); err != nil {
+				return fmt.Errorf("send keepalive: %w", err)
+			}
 		case evt, ok := <-ch:
 			if !ok {
 				return nil
@@ -161,6 +183,17 @@ func toEvent(e *nboxclient.Entry) *streamv1.Event {
 		Source:  "nbox",
 		Subject: e.Key,
 		Data:    data,
+	}
+}
+
+// keepaliveEvent builds the empty heartbeat event. One DATA frame is all
+// the ALB needs to reset its idle timer.
+func keepaliveEvent() *streamv1.Event {
+	return &streamv1.Event{
+		Id:         uuid.NewString(),
+		Type:       string(event.Keepalive),
+		Source:     "nbox",
+		TimeUnixMs: time.Now().UnixMilli(),
 	}
 }
 

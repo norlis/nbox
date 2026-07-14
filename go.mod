@@ -21,7 +21,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/nats-io/nats.go v1.52.0
 	github.com/norlis/event-driven v1.0.0-beta.5
-	github.com/norlis/httpgate v1.0.0-beta.1
+	github.com/norlis/httpgate v1.0.0
 	github.com/sony/gobreaker v1.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1

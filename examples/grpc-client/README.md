@@ -99,6 +99,10 @@ message Event {
 Filter semantics: both empty → all events; both set → AND (match a prefix
 AND a type); within each list → OR.
 
+### Heartbeat events
+
+entrypushd emits an empty `type == "nbox.keepalive"` event on each stream every `ENTRYPUSHD_KEEPALIVE_INTERVAL` (default 60s) so L7 proxies (e.g. an ALB with a short idle timeout) don't kill idle streams. These events carry no `subject` and no `data`. **Consumers MUST skip them** (`if evt.type == "nbox.keepalive": continue`); treating them as healthy traffic (resetting a watchdog or reconnect backoff) is correct. They bypass the server-side type filter — you receive them even when `types` is set. For local testing, `watch.py` logs each heartbeat at DEBUG level: run it with `NBOX_LOG_LEVEL=DEBUG` to see them arrive.
+
 ## Vault encrypted delivery
 
 `passbox/*` values never travel in clear. Present your public key in the

@@ -92,7 +92,7 @@ func (m *mockStream) snapshotOf() []*streamv1.Event {
 func TestWatch_SnapshotBeforeDeltas(t *testing.T) {
 	broker := NewBroker(nil)
 	snap := &fakeSnap{entries: []nboxclient.Entry{{Key: "p/a", Value: "1"}, {Key: "p/b", Value: "2"}}}
-	srv := NewStreamServer(broker, snap, nil)
+	srv := NewStreamServer(broker, snap, nil, 0)
 
 	ctx, cancel := context.WithCancel(auth.WithM2MToken(context.Background(), "jwt-xyz"))
 	stream := &mockStream{ctx: ctx}
@@ -119,7 +119,7 @@ func TestWatch_BufferedDeltaDeliveredAfterSnapshot(t *testing.T) {
 	broker := NewBroker(nil)
 	release := make(chan struct{})
 	snap := &blockingSnap{entries: []nboxclient.Entry{{Key: "p/a", Value: "1"}}, release: release}
-	srv := NewStreamServer(broker, snap, nil)
+	srv := NewStreamServer(broker, snap, nil, 0)
 
 	ctx, cancel := context.WithCancel(auth.WithM2MToken(context.Background(), "jwt"))
 	stream := &mockStream{ctx: ctx}
@@ -143,7 +143,7 @@ func TestWatch_BufferedDeltaDeliveredAfterSnapshot(t *testing.T) {
 
 func TestWatch_NilClientStreamsDeltasOnly(t *testing.T) {
 	broker := NewBroker(nil)
-	srv := NewStreamServer(broker, nil, nil)
+	srv := NewStreamServer(broker, nil, nil, 0)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := &mockStream{ctx: ctx}
@@ -169,7 +169,7 @@ func TestWatch_NilClientStreamsDeltasOnly(t *testing.T) {
 func TestWatch_FetchErrorFailsClosed(t *testing.T) {
 	broker := NewBroker(nil)
 	snap := &fakeSnap{err: errors.New("nbox down")}
-	srv := NewStreamServer(broker, snap, nil)
+	srv := NewStreamServer(broker, snap, nil, 0)
 
 	ctx := auth.WithM2MToken(context.Background(), "jwt")
 	stream := &mockStream{ctx: ctx}
@@ -182,7 +182,7 @@ func TestWatch_FetchErrorFailsClosed(t *testing.T) {
 func TestWatch_EmptyPrefixesSkipsSnapshot(t *testing.T) {
 	broker := NewBroker(nil)
 	snap := &fakeSnap{entries: []nboxclient.Entry{{Key: "p/a"}}}
-	srv := NewStreamServer(broker, snap, nil)
+	srv := NewStreamServer(broker, snap, nil, 0)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := &mockStream{ctx: ctx}
@@ -215,7 +215,7 @@ func TestWatch_SealsVaultSnapshotEntries(t *testing.T) {
 		entries:     []nboxclient.Entry{{Key: "passbox/banking/api", Secure: true}},
 		resolveVals: map[string]string{"passbox/banking/api": "TOP-SECRET"},
 	}
-	srv := NewStreamServer(broker, snap, nil)
+	srv := NewStreamServer(broker, snap, nil, 0)
 
 	md := metadata.New(map[string]string{"x-vault-pubkey": pubB64})
 	ctx, cancel := context.WithCancel(metadata.NewIncomingContext(
@@ -246,7 +246,7 @@ func TestWatch_SealsVaultUpsertDelta_NotDelete(t *testing.T) {
 	broker := NewBroker(nil)
 	// Empty snapshot; the value is resolved on the live delta.
 	snap := &fakeSnap{resolveVals: map[string]string{"passbox/x": "DELTA-SECRET"}}
-	srv := NewStreamServer(broker, snap, nil)
+	srv := NewStreamServer(broker, snap, nil, 0)
 
 	md := metadata.New(map[string]string{"x-vault-pubkey": pubB64})
 	ctx, cancel := context.WithCancel(metadata.NewIncomingContext(
@@ -302,7 +302,7 @@ func TestWatch_NonVaultSnapshotStaysPlain(t *testing.T) {
 
 	broker := NewBroker(nil)
 	snap := &fakeSnap{entries: []nboxclient.Entry{{Key: "development/svc/x", Value: "v"}}}
-	srv := NewStreamServer(broker, snap, nil)
+	srv := NewStreamServer(broker, snap, nil, 0)
 
 	md := metadata.New(map[string]string{"x-vault-pubkey": pubB64})
 	ctx, cancel := context.WithCancel(metadata.NewIncomingContext(
@@ -329,7 +329,7 @@ func TestWatch_SealResolveErrorFailsClosed(t *testing.T) {
 		entries:    []nboxclient.Entry{{Key: "passbox/k", Secure: true}},
 		resolveErr: errors.New("nbox down"),
 	}
-	srv := NewStreamServer(broker, snap, nil)
+	srv := NewStreamServer(broker, snap, nil, 0)
 
 	md := metadata.New(map[string]string{"x-vault-pubkey": pubB64})
 	ctx := metadata.NewIncomingContext(auth.WithM2MToken(context.Background(), "jwt"), md)
@@ -343,7 +343,7 @@ func TestWatch_SealResolveErrorFailsClosed(t *testing.T) {
 func TestWatch_VaultWithoutPubkeyStaysMaskedPlain(t *testing.T) {
 	broker := NewBroker(nil)
 	snap := &fakeSnap{entries: []nboxclient.Entry{{Key: "passbox/k", Value: "*****", Secure: true}}}
-	srv := NewStreamServer(broker, snap, nil)
+	srv := NewStreamServer(broker, snap, nil, 0)
 
 	ctx, cancel := context.WithCancel(auth.WithM2MToken(context.Background(), "jwt"))
 	stream := &mockStream{ctx: ctx}
@@ -356,6 +356,69 @@ func TestWatch_VaultWithoutPubkeyStaysMaskedPlain(t *testing.T) {
 	require.NoError(t, <-done)
 
 	require.Empty(t, stream.snapshotOf()[0].Extensions["encrypted"], "no pubkey => no sealing")
+}
+
+func TestWatch_EmitsKeepalivesWhenIdle(t *testing.T) {
+	t.Parallel()
+	broker := NewBroker(nil)
+	srv := NewStreamServer(broker, nil, nil, KeepaliveInterval(20*time.Millisecond))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := &mockStream{ctx: ctx}
+	done := make(chan error, 1)
+	go func() { done <- srv.Watch(&streamv1.WatchRequest{Prefixes: []string{"p/"}}, stream) }()
+
+	require.Eventually(t, func() bool { return len(stream.snapshotOf()) >= 2 }, time.Second, 5*time.Millisecond)
+	cancel()
+	require.NoError(t, <-done)
+
+	for _, evt := range stream.snapshotOf() {
+		require.Equal(t, string(event.Keepalive), evt.Type)
+		require.Equal(t, "nbox", evt.Source)
+		require.Empty(t, evt.Subject, "keepalive carries no subject")
+		require.Empty(t, evt.Data, "keepalive carries no payload")
+		require.Positive(t, evt.TimeUnixMs)
+		require.NotEmpty(t, evt.Id)
+	}
+}
+
+func TestWatch_ZeroIntervalDisablesKeepalive(t *testing.T) {
+	t.Parallel()
+	broker := NewBroker(nil)
+	srv := NewStreamServer(broker, nil, nil, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := &mockStream{ctx: ctx}
+	done := make(chan error, 1)
+	go func() { done <- srv.Watch(&streamv1.WatchRequest{}, stream) }()
+
+	time.Sleep(100 * time.Millisecond) // enough for several 20ms ticks if the disable were broken
+	cancel()
+	require.NoError(t, <-done)
+	require.Empty(t, stream.snapshotOf())
+}
+
+func TestWatch_KeepalivesInterleaveWithDeltas(t *testing.T) {
+	t.Parallel()
+	broker := NewBroker(nil)
+	srv := NewStreamServer(broker, nil, nil, KeepaliveInterval(20*time.Millisecond))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := &mockStream{ctx: ctx}
+	done := make(chan error, 1)
+	go func() { done <- srv.Watch(&streamv1.WatchRequest{Prefixes: []string{"p/"}}, stream) }()
+
+	require.Eventually(t, func() bool {
+		broker.Publish(&streamv1.Event{Id: "d1", Type: string(event.EntryUpserted), Subject: "p/a"})
+		types := map[string]bool{}
+		for _, evt := range stream.snapshotOf() {
+			types[evt.Type] = true
+		}
+		return types[string(event.EntryUpserted)] && types[string(event.Keepalive)]
+	}, time.Second, 10*time.Millisecond)
+
+	cancel()
+	require.NoError(t, <-done)
 }
 
 func mustKey(t *testing.T) (*ecdh.PrivateKey, *ecdh.PublicKey) {

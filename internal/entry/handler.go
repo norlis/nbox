@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"nbox/internal/transport/httpx"
-
 	"github.com/norlis/httpgate/presenter"
 	_ "github.com/norlis/httpgate/problem"
+	"nbox/internal/transport/httpx"
 )
 
 type Handler struct {

@@ -50,6 +50,11 @@ type Config struct {
 
 	// ConfigTTL is the refresh interval of the config cache.
 	ConfigTTL time.Duration `env:"NBOX_CONFIG_TTL" envDefault:"45s"`
+
+	// KeepaliveInterval is the period between nbox.keepalive events on
+	// each Watch stream. Must stay below the ALB idle timeout. 0 disables
+	// the heartbeat (deltas only, pre-heartbeat behavior).
+	KeepaliveInterval time.Duration `env:"ENTRYPUSHD_KEEPALIVE_INTERVAL" envDefault:"60s"`
 }
 
 // LoadConfig returns Config from env. Errors if required values are missing.

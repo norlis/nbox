@@ -104,6 +104,7 @@ var Module = fx.Module("entrypushd",
 		// Existing adapters.
 		func(b *grpcint.Broker) handler.Publisher { return b },
 		func(cfg Config) grpcint.ListenAddr { return grpcint.ListenAddr(cfg.GRPCListen) },
+		func(cfg Config) grpcint.KeepaliveInterval { return grpcint.KeepaliveInterval(cfg.KeepaliveInterval) },
 	),
 	fx.Invoke(func(*googlegrpc.Server) {}),
 	fx.Invoke(StartConsumer),

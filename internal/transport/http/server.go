@@ -68,7 +68,7 @@ func NewServer(params Params) {
 		),
 		middleware.Recover(params.Slog),
 		authmw.MaxBodyBytes(maxRequestBodyBytes),
-		middleware.RequestLogger(params.Slog),
+		middleware.RequestLogger(params.Slog, middleware.WithSkipPaths("/status", "/live", "/ready")),
 		middleware.AllowAll(),
 	}
 

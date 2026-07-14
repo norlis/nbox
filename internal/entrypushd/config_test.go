@@ -2,6 +2,7 @@ package entrypushd_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"nbox/internal/entrypushd"
@@ -75,6 +76,19 @@ func TestLoadConfig_NboxURL_FromEnv(t *testing.T) {
 	cfg, err := entrypushd.LoadConfig()
 	require.NoError(t, err)
 	require.Equal(t, "http://nbox:7337", cfg.NboxURL)
+}
+
+func TestLoadConfig_KeepaliveIntervalDefaultAndOverride(t *testing.T) {
+	t.Setenv("HMAC_SECRET_KEY", testHmacSecret)
+
+	cfg, err := entrypushd.LoadConfig()
+	require.NoError(t, err)
+	require.Equal(t, 60*time.Second, cfg.KeepaliveInterval, "default 60s")
+
+	t.Setenv("ENTRYPUSHD_KEEPALIVE_INTERVAL", "0")
+	cfg, err = entrypushd.LoadConfig()
+	require.NoError(t, err)
+	require.Zero(t, cfg.KeepaliveInterval, "0 disables the heartbeat")
 }
 
 func TestLoadConfig_NboxURL_DefaultsEmpty(t *testing.T) {

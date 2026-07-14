@@ -24,7 +24,8 @@ entrypushd re-seals the snapshot to it).
     uv run watch.py
 
 Env: NBOX_GRPC (default localhost:9337), NBOX_AUTH (approle|aws-sts, default approle),
-NBOX_GRPC_TLS (true|false; auto-on for :443, e.g. behind an ALB).
+NBOX_GRPC_TLS (true|false; auto-on for :443, e.g. behind an ALB),
+NBOX_LOG_LEVEL (default INFO; DEBUG shows the nbox.keepalive heartbeats).
 """
 
 import base64
@@ -45,7 +46,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from pyhpke import AEADId, CipherSuite, KDFId, KEMId, KEMKey
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=os.environ.get("NBOX_LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s.%(msecs)03d %(levelname)s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -77,6 +78,9 @@ _ENC_LEN = 32  # X25519 encapsulated-key length, prefixing the ciphertext.
 
 # Reconnect backoff bounds (seconds).
 MIN_BACKOFF, MAX_BACKOFF, BACKOFF_FACTOR = 1.0, 30.0, 2.0
+
+# Server heartbeat type: keeps the ALB from idle-killing the stream. Skip it.
+KEEPALIVE_TYPE = "nbox.keepalive"
 
 # gRPC status codes that are terminal (do not retry).
 _TERMINAL_CODES = frozenset({"UNAUTHENTICATED"})
@@ -284,7 +288,13 @@ class NboxClient:
                 with self._channel() as ch:
                     stub = self._pbg.KVStreamStub(ch)
                     for evt_type, subject, value, server_ms in self._stream(stub):
-                        backoff = MIN_BACKOFF  # healthy stream → reset
+                        backoff = MIN_BACKOFF  # healthy stream → reset (keepalives count)
+                        if evt_type == KEEPALIVE_TYPE:
+                            # Server heartbeat: entrypushd emits it on idle streams so the
+                            # ALB's idle timeout doesn't kill the connection. No payload;
+                            # visible with NBOX_LOG_LEVEL=DEBUG for local testing.
+                            logger.debug("[%s] server heartbeat (keeps the stream alive behind the ALB)", evt_type)
+                            continue
                         logger.info("[%s] %s = %r  (%s)%s", evt_type, subject, value, env_name(subject), _lat_cols(value, server_ms))
                 logger.info("stream closed by server; reconnecting…")
             except self._grpc.RpcError as e:
