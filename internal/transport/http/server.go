@@ -5,16 +5,17 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/norlis/httpgate/authz/opa"
-	"github.com/norlis/httpgate/health"
-	"github.com/norlis/httpgate/middleware"
-	httpSwagger "github.com/swaggo/http-swagger/v2"
-	"go.uber.org/fx"
 	_ "nbox/docs"
 	"nbox/internal/application"
 	auth "nbox/internal/auth"
 	"nbox/internal/nbox"
 	authmw "nbox/internal/transport/http/middleware"
+
+	"github.com/norlis/httpgate/authz/opa"
+	"github.com/norlis/httpgate/health"
+	"github.com/norlis/httpgate/middleware"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
+	"go.uber.org/fx"
 )
 
 // Route is the interface implemented by all domain handlers.
@@ -68,7 +69,7 @@ func NewServer(params Params) {
 		),
 		middleware.Recover(params.Slog),
 		authmw.MaxBodyBytes(maxRequestBodyBytes),
-		middleware.RequestLogger(params.Slog, middleware.WithSkipPaths("/status", "/live", "/ready")),
+		middleware.RequestLogger(params.Slog, middleware.WithSkipPaths("/status", "/live", "/ready", "/health")),
 		middleware.AllowAll(),
 	}
 
