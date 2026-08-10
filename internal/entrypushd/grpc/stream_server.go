@@ -160,7 +160,13 @@ func (s *StreamServer) sendSnapshot(stream streamv1.KVStream_WatchServer, prefix
 					return status.Errorf(codes.Unavailable, "vault seal failed: %v", err)
 				}
 			} else {
-				evt = toEvent(&entries[i])
+				evt, err = toEvent(&entries[i])
+				if err != nil {
+					// Fail-closed, like the seal path: a partial snapshot
+					// would leave the agent with silent gaps.
+					s.logger.Error("snapshot event build failed, failing closed", slog.String("key", entries[i].Key), slog.Any("error", err))
+					return status.Errorf(codes.Unavailable, "snapshot failed: %v", err)
+				}
 			}
 			if err := stream.Send(evt); err != nil {
 				return err
@@ -175,15 +181,18 @@ func (s *StreamServer) sendSnapshot(stream streamv1.KVStream_WatchServer, prefix
 // is emitted as a burst of upserts (= current state); agents apply
 // upsert as "set this key" with last-write-wins by Subject, so a key
 // appearing both in the snapshot and as a concurrent delta is idempotent.
-func toEvent(e *nboxclient.Entry) *streamv1.Event {
-	data, _ := json.Marshal(e) // Entry is always JSON-serializable.
+func toEvent(e *nboxclient.Entry) (*streamv1.Event, error) {
+	data, err := json.Marshal(e)
+	if err != nil {
+		return nil, fmt.Errorf("marshal snapshot entry %s: %w", e.Key, err)
+	}
 	return &streamv1.Event{
 		Id:      uuid.NewString(),
 		Type:    string(event.EntryUpserted),
 		Source:  "nbox",
 		Subject: e.Key,
 		Data:    data,
-	}
+	}, nil
 }
 
 // keepaliveEvent builds the empty heartbeat event. One DATA frame is all

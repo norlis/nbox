@@ -68,7 +68,9 @@ func (h *Handler) Tracking(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
+		// bitSize 32 rejects values that would overflow int32 into a
+		// negative limit and bypass the Limit > 0 guard downstream.
+		if limit, err := strconv.ParseInt(limitStr, 10, 32); err == nil && limit > 0 {
 			opts = append(opts, WithHistoryLimit(int32(limit)))
 		}
 	}

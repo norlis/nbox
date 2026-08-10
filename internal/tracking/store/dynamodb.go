@@ -126,7 +126,7 @@ func (d *DynamoDB) History(ctx context.Context, key string, opts ...tracking.His
 
 		history = append(history, pageItems...)
 
-		if config.Limit > 0 && int32(len(history)) >= config.Limit {
+		if config.Limit > 0 && len(history) >= int(config.Limit) {
 			history = history[:config.Limit]
 			break
 		}

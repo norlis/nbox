@@ -46,7 +46,7 @@ func NewClient(baseURL string, hc *http.Client) *Client {
 	}
 	c.SetBaseURL(strings.TrimRight(baseURL, "/")).
 		SetResponseBodyLimit(maxResponseBytes).
-		SetDisableWarn(true). // entrypushd↔nbox is plain HTTP (TLS is future)
+		SetLoggerWarnLevel(true). // entrypushd↔nbox is plain HTTP (TLS is future)
 		SetRetryCount(retryCount).
 		SetRetryWaitTime(retryWaitTime).
 		SetRetryMaxWaitTime(retryMaxWaitTime).
@@ -77,7 +77,7 @@ func (c *Client) Snapshot(ctx context.Context, token, prefix string) ([]Entry, e
 	if err != nil {
 		return nil, fmt.Errorf("nbox snapshot: %s: %w", prefix, err)
 	}
-	if resp.IsError() {
+	if resp.IsStatusFailure() {
 		return nil, fmt.Errorf("nbox snapshot: %s: unexpected status %d", prefix, resp.StatusCode())
 	}
 
@@ -100,7 +100,7 @@ func (c *Client) Resolve(ctx context.Context, token, key string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("nbox resolve: %s: %w", key, err)
 	}
-	if resp.IsError() {
+	if resp.IsStatusFailure() {
 		return "", fmt.Errorf("nbox resolve: %s: unexpected status %d", key, resp.StatusCode())
 	}
 

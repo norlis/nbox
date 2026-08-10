@@ -23,7 +23,8 @@ import (
 func TestToEvent_MapsEntryToUpsert(t *testing.T) {
 	e := nboxclient.Entry{Key: "passbox/banking/api", Value: "secret-val", Secure: true}
 
-	evt := toEvent(&e)
+	evt, err := toEvent(&e)
+	require.NoError(t, err)
 
 	require.Equal(t, "passbox/banking/api", evt.Subject)
 	require.Equal(t, string(event.EntryUpserted), evt.Type)

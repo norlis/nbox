@@ -60,7 +60,7 @@ func callSTS(
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrSTSUnavailable, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Error responses are bounded by the same LimitReader, so reading them to
 	// surface the STS reason (e.g. InvalidClientTokenId, SignatureDoesNotMatch)

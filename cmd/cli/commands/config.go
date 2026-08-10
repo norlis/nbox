@@ -73,26 +73,36 @@ type basicAuthData struct {
 }
 
 // Pure builders (SoC + testability): build the JSON of one domain entity,
-// no side-effects (bcrypt/uuid happen in the command).
-func buildBasicAuthData(passwordHash string, roles []string, status string) []byte {
+// no side-effects (bcrypt/uuid happen in the command). A marshal error is
+// propagated: silently persisting a nil/partial credential would be worse.
+func buildBasicAuthData(passwordHash string, roles []string, status string) ([]byte, error) {
 	// #nosec G117 -- "password" holds a bcrypt hash (not plaintext); the json key
 	// is fixed by the basic-auth parser and is persisted intentionally.
-	b, _ := json.Marshal(basicAuthData{Password: passwordHash, Roles: roles, Status: status})
-	return b
+	b, err := json.Marshal(basicAuthData{Password: passwordHash, Roles: roles, Status: status})
+	if err != nil {
+		return nil, fmt.Errorf("marshal basic auth data: %w", err)
+	}
+	return b, nil
 }
 
-func buildARNMapping(arn, name string, roles []string, status string) []byte {
-	b, _ := json.Marshal(awssts.ARNMapping{ARN: arn, Name: name, Roles: roles, Status: awssts.Status(status)})
-	return b
+func buildARNMapping(arn, name string, roles []string, status string) ([]byte, error) {
+	b, err := json.Marshal(awssts.ARNMapping{ARN: arn, Name: name, Roles: roles, Status: awssts.Status(status)})
+	if err != nil {
+		return nil, fmt.Errorf("marshal arn mapping: %w", err)
+	}
+	return b, nil
 }
 
-func buildAppRole(roleID, name string, roles, cidrs []string, secretHash string, createdAt time.Time) []byte {
-	b, _ := json.Marshal(approle.Role{
+func buildAppRole(roleID, name string, roles, cidrs []string, secretHash string, createdAt time.Time) ([]byte, error) {
+	b, err := json.Marshal(approle.Role{
 		ID: roleID, Name: name, Roles: roles, AllowedCIDRs: cidrs,
 		SecretHashes: []approle.SecretHash{{Hash: secretHash, CreatedAt: createdAt}},
 		Status:       approle.StatusActive,
 	})
-	return b
+	if err != nil {
+		return nil, fmt.Errorf("marshal approle: %w", err)
+	}
+	return b, nil
 }
 
 // hashPassword bcrypts --password (required) at --cost.
@@ -134,7 +144,11 @@ var configUserUpsertCmd = &cobra.Command{
 			}
 			roles, _ := cmd.Flags().GetStringSlice("roles")
 			status, _ := cmd.Flags().GetString("status")
-			emitEnv(config.KeyBasicAuth, username, buildBasicAuthData(hash, roles, status))
+			data, err := buildBasicAuthData(hash, roles, status)
+			if err != nil {
+				return err
+			}
+			emitEnv(config.KeyBasicAuth, username, data)
 			return nil
 		}
 
@@ -160,7 +174,11 @@ var configUserUpsertCmd = &cobra.Command{
 			if cmd.Flags().Changed("status") {
 				d.Status, _ = cmd.Flags().GetString("status")
 			}
-			if err := s.Upsert(cmd.Context(), config.KeyBasicAuth.Kind, username, buildBasicAuthData(d.Password, d.Roles, d.Status), by); err != nil {
+			data, derr := buildBasicAuthData(d.Password, d.Roles, d.Status)
+			if derr != nil {
+				return derr
+			}
+			if err := s.Upsert(cmd.Context(), config.KeyBasicAuth.Kind, username, data, by); err != nil {
 				return err
 			}
 			info("[ok] user %q saved (roles=%v status=%s)\n", username, d.Roles, d.Status)
@@ -219,7 +237,11 @@ var configAwsStsUpsertCmd = &cobra.Command{
 			name, _ := cmd.Flags().GetString("name")
 			roles, _ := cmd.Flags().GetStringSlice("roles")
 			status, _ := cmd.Flags().GetString("status")
-			emitEnv(config.KeyARNMap, arn, buildARNMapping(arn, name, roles, status))
+			data, err := buildARNMapping(arn, name, roles, status)
+			if err != nil {
+				return err
+			}
+			emitEnv(config.KeyARNMap, arn, data)
 			return nil
 		}
 		return withAdminStore(cmd.Context(), cmd, func(s *config.AdminStore, by string) error {
@@ -243,7 +265,10 @@ var configAwsStsUpsertCmd = &cobra.Command{
 				st, _ := cmd.Flags().GetString("status")
 				m.Status = awssts.Status(st)
 			}
-			data := buildARNMapping(m.ARN, m.Name, m.Roles, string(m.Status))
+			data, derr := buildARNMapping(m.ARN, m.Name, m.Roles, string(m.Status))
+			if derr != nil {
+				return derr
+			}
 			if err := s.Upsert(cmd.Context(), config.KeyARNMap.Kind, arn, data, by); err != nil {
 				return err
 			}
@@ -311,7 +336,10 @@ var configApproleGenerateCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("bcrypt: %w", err)
 		}
-		data := buildAppRole(roleID, name, roles, cidrs, string(hash), time.Now().UTC())
+		data, err := buildAppRole(roleID, name, roles, cidrs, string(hash), time.Now().UTC())
+		if err != nil {
+			return err
+		}
 
 		if emit, _ := cmd.Flags().GetBool("emit-env"); emit {
 			emitEnv(config.KeyAppRole, roleID, data)

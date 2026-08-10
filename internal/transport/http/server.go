@@ -5,17 +5,16 @@ import (
 	"log/slog"
 	"net/http"
 
-	_ "nbox/docs"
-	"nbox/internal/application"
-	auth "nbox/internal/auth"
-	"nbox/internal/nbox"
-	authmw "nbox/internal/transport/http/middleware"
-
 	"github.com/norlis/httpgate/authz/opa"
 	"github.com/norlis/httpgate/health"
 	"github.com/norlis/httpgate/middleware"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 	"go.uber.org/fx"
+	_ "nbox/docs"
+	"nbox/internal/application"
+	auth "nbox/internal/auth"
+	"nbox/internal/nbox"
+	authmw "nbox/internal/transport/http/middleware"
 )
 
 // Route is the interface implemented by all domain handlers.

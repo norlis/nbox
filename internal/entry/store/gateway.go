@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -50,7 +51,13 @@ func (g *Gateway) RegisterBackend(adapter entry.PartialStore) {
 func (g *Gateway) resolveBackend(ctx context.Context, key string, secure bool) (entry.PartialStore, error) {
 	prefixConfig, err := g.prefixRepo.ByPrefix(ctx, key)
 	if err != nil {
-		return g.index, nil
+		// No prefix config for this key: designed fallback to the index.
+		// Any other error must fail closed — silently falling back could
+		// route a secure entry to the default backend.
+		if errors.Is(err, entry.ErrEntryNotFound) {
+			return g.index, nil
+		}
+		return nil, fmt.Errorf("resolve prefix config for %s: %w", key, err)
 	}
 
 	targetType := prefixConfig.TypeDefault

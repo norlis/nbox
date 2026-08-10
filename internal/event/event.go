@@ -12,7 +12,7 @@ type Type string
 const (
 	EntryUpserted   Type = "nbox.entry.upserted"
 	EntryDeleted    Type = "nbox.entry.deleted"
-	EntrySecretRead Type = "nbox.entry.secret.read"
+	EntrySecretRead Type = "nbox.entry.secret.read" //nolint:gosec // G101: event type name, not a credential
 	TemplateCreated Type = "nbox.template.created"
 	TemplateUpdated Type = "nbox.template.updated"
 	// Keepalive is the application-level heartbeat emitted by entrypushd

@@ -78,7 +78,14 @@ func (r *Recorder) publishEvents(ctx context.Context, traceID, updatedBy string,
 			payloadObj = &safeCopy
 		}
 
-		payloadBytes, _ := json.Marshal(payloadObj)
+		payloadBytes, err := json.Marshal(payloadObj)
+		if err != nil {
+			// Drop rather than publish an event with a nil payload.
+			r.logger.Error("marshal event payload failed; event dropped",
+				zap.String("transactionId", traceID),
+				zap.Error(err))
+			continue
+		}
 
 		events = append(events, event.Event{
 			Type:          event.EntryUpserted,
