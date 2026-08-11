@@ -1,3 +1,20 @@
+### status
+GET {{baseUrl}}/status
+Content-Type: application/json
+
+### live
+GET {{baseUrl}}/live
+Content-Type: application/json
+
+### ready
+GET {{baseUrl}}/ready
+Content-Type: application/json
+
+### health
+GET {{baseUrl}}/health
+Content-Type: application/json
+
+
 ### token
 POST {{baseUrl}}/api/auth/token
 Content-Type: application/json
@@ -13,6 +30,11 @@ Content-Type: application/json
 %}
 
 
+### perms
+GET {{baseUrl}}/api/me/permissions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
 ### create template
 POST {{baseUrl}}/api/box
 Authorization: Bearer {{token}}
@@ -20,16 +42,35 @@ Content-Type: application/json
 
 {
   "payload": {
-    "service": "widget-x",
+    "service": "example",
     "stage": {
       "development": {
         "template": {
-          "name": "task_definition.json",
-          "value": "ewogICAiRU5WXzEiOiAie3dpZGdldC14LmRldmVsb3BtZW50LmtleX0iLAogICAiRU5WXzIiOiAie3dpZGdldC14LmRldmVsb3BtZW50LmRlYnVnfSIsCiAgICJHTE9CQUxfU0VSVklDRSI6ICJ7d2lkZ2V0LXguc2VudHJ5fSIsCiAgICJkb21haW4iOiAie3ByaXZhdGUtZG9tYWlufSIsCiAgICJ2ZXJzaW9uIjogIjEiCn0K"
+          "name": "template-example.json",
+          "value": "ewogICJFWEFNUExFX1ZBUjAwMSI6ICJ7eyBnbG9iYWwvZXhhbXBsZS92YXIwMDEgfX0iLAogICJFWEFNUExFX1ZBUl9VTFRSQV9TRUNSRVQiOiAie3sgZ2xvYmFsL2V4YW1wbGUvdmFyLXVsdHJhLXNlY3JldCB9fSIsCiAgIkVYQU1QTEVfVkFSX1VMVFJBX1NFQ1JFVDIiOiAie3sgZ2xvYmFsL2V4YW1wbGUvdmFyLXVsdHJhLXNlY3JldDIgfX0iLAogICJQQVJBTUVURVJfU1RPUkVfVVJMX0VYQU1QTEUiOiAie3sgZGV2ZWxvcG1lbnQvc2VydmVybGVzcy91cmwtZXhhbXBsZSB9fSIsCiAgIk5BTUUiOiAie3sgZGV2ZWxvcG1lbnQvZXhhbXBsZS9uYW1lIH19IiwKICAiUEFTU0JPWF9URVNUIjogInt7IHBhc3Nib3gvdmF1bHQtMSB9fSIsCiAgIk1JU1NJTkdfVEVTVCI6ICJ7eyBkZXZlbG9wbWVudC9taXNzaW5nIH19Igp9"
         }
       }
     }
   }
+}
+
+
+### create (v2) task-def [OK]
+POST {{baseUrl}}/api/box/example-ecs1/development/task-definition.json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "content": "ewogICJjb250YWluZXJEZWZpbml0aW9ucyI6IFsKICAgIHsKICAgICAgImNvbW1hbmQiOiBbCiAgICAgICAgIi9iaW4vc2ggLWMgXCJlY2hvICc8aHRtbD4gPGhlYWQ+IDx0aXRsZT5BbWF6b24gRUNTIFNhbXBsZSBBcHA8L3RpdGxlPiA8c3R5bGU+Ym9keSB7bWFyZ2luLXRvcDogNDBweDsgYmFja2dyb3VuZC1jb2xvcjogIzMzMzt9IDwvc3R5bGU+IDwvaGVhZD48Ym9keT4gPGRpdiBzdHlsZT1jb2xvcjp3aGl0ZTt0ZXh0LWFsaWduOmNlbnRlcj4gPGgxPkFtYXpvbiBFQ1MgU2FtcGxlIEFwcDwvaDE+IDxoMj5Db25ncmF0dWxhdGlvbnMhPC9oMj4gPHA+WW91ciBhcHBsaWNhdGlvbiBpcyBub3cgcnVubmluZyBvbiBhIGNvbnRhaW5lciBpbiBBbWF6b24gRUNTLjwvcD4gPC9kaXY+PC9ib2R5PjwvaHRtbD4nID4gIC91c3IvbG9jYWwvYXBhY2hlMi9odGRvY3MvaW5kZXguaHRtbCAmJiBodHRwZC1mb3JlZ3JvdW5kXCIiCiAgICAgIF0sCiAgICAgICJlbnRyeVBvaW50IjogWwogICAgICAgICJzaCIsCiAgICAgICAgIi1jIgogICAgICBdLAogICAgICAiZXNzZW50aWFsIjogdHJ1ZSwKICAgICAgImltYWdlIjogInB1YmxpYy5lY3IuYXdzL2RvY2tlci9saWJyYXJ5L2h0dHBkOjIuNCIsCiAgICAgICJsb2dDb25maWd1cmF0aW9uIjogewogICAgICAgICJsb2dEcml2ZXIiOiAiYXdzbG9ncyIsCiAgICAgICAgIm9wdGlvbnMiOiB7CiAgICAgICAgICAiYXdzbG9ncy1ncm91cCIgOiAiL2Vjcy9mYXJnYXRlLXRhc2stZGVmaW5pdGlvbiIsCiAgICAgICAgICAiYXdzbG9ncy1yZWdpb24iOiAidXMtZWFzdC0xIiwKICAgICAgICAgICJhd3Nsb2dzLXN0cmVhbS1wcmVmaXgiOiAiZWNzIgogICAgICAgIH0KICAgICAgfSwKICAgICAgIm5hbWUiOiAic2FtcGxlLWZhcmdhdGUtYXBwIiwKICAgICAgInBvcnRNYXBwaW5ncyI6IFsKICAgICAgICB7CiAgICAgICAgICAiY29udGFpbmVyUG9ydCI6IDgwLAogICAgICAgICAgImhvc3RQb3J0IjogODAsCiAgICAgICAgICAicHJvdG9jb2wiOiAidGNwIgogICAgICAgIH0KICAgICAgXQogICAgfQogIF0sCiAgImNwdSI6ICIyNTYiLAogICJleGVjdXRpb25Sb2xlQXJuIjogImFybjphd3M6aWFtOjowMTIzNDU2Nzg5MTA6cm9sZS9lY3NUYXNrRXhlY3V0aW9uUm9sZSIsCiAgImZhbWlseSI6ICJmYXJnYXRlLXRhc2stZGVmaW5pdGlvbiIsCiAgIm1lbW9yeSI6ICI1MTIiLAogICJuZXR3b3JrTW9kZSI6ICJhd3N2cGMiLAogICJydW50aW1lUGxhdGZvcm0iOiB7CiAgICAib3BlcmF0aW5nU3lzdGVtRmFtaWx5IjogIkxJTlVYIgogIH0sCiAgInJlcXVpcmVzQ29tcGF0aWJpbGl0aWVzIjogWwogICAgIkZBUkdBVEUiCiAgXQp9"
+}
+
+### create (v2) task-def [ERR]
+POST {{baseUrl}}/api/box/example-ecs1/development/task-definition.json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "content": "ewogICJjb250YWluZXJEZWZpbml0aW9ucyI6IFsKICAgIHsKICAgICAgImNvbW1hbmQiOiBbCiAgICAgICAgIi9iaW4vc2ggLWMgXCJlY2hvICc8aHRtbD4gPGhlYWQ+IDx0aXRsZT5BbWF6b24gRUNTIFNhbXBsZSBBcHA8L3RpdGxlPiA8c3R5bGU+Ym9keSB7bWFyZ2luLXRvcDogNDBweDsgYmFja2dyb3VuZC1jb2xvcjogIzMzMzt9IDwvc3R5bGU+IDwvaGVhZD48Ym9keT4gPGRpdiBzdHlsZT1jb2xvcjp3aGl0ZTt0ZXh0LWFsaWduOmNlbnRlcj4gPGgxPkFtYXpvbiBFQ1MgU2FtcGxlIEFwcDwvaDE+IDxoMj5Db25ncmF0dWxhdGlvbnMhPC9oMj4gPHA+WW91ciBhcHBsaWNhdGlvbiBpcyBub3cgcnVubmluZyBvbiBhIGNvbnRhaW5lciBpbiBBbWF6b24gRUNTLjwvcD4gPC9kaXY+PC9ib2R5PjwvaHRtbD4nID4gIC91c3IvbG9jYWwvYXBhY2hlMi9odGRvY3MvaW5kZXguaHRtbCAmJiBodHRwZC1mb3JlZ3JvdW5kXCIiCiAgICAgIF0sCiAgICAgICJlbnRyeVBvaW50IjogWwogICAgICAgICJzaCIsCiAgICAgICAgIi1jIgogICAgICBdLAogICAgICAiZW52aXJvbm1lbnQiOiBbCiAgICAgICAgewogICAgICAgICAgIm5hbWUiOiAiZXZlbnQiLAogICAgICAgICAgInZhbHVlIjogInRlc3QiCiAgICAgICAgfQogICAgICBdLAogICAgICAiZXNzZW50aWFsIjogdHJ1ZSwKICAgICAgImltYWdlIjogInB1YmxpYy5lY3IuYXdzL2RvY2tlci9saWJyYXJ5L2h0dHBkOjIuNCIsCiAgICAgICJsb2dDb25maWd1cmF0aW9uIjogewogICAgICAgICJsb2dEcml2ZXIiOiAiYXdzbG9ncyIsCiAgICAgICAgIm9wdGlvbnMiOiB7CiAgICAgICAgICAiYXdzbG9ncy1ncm91cCIgOiAiL2Vjcy9mYXJnYXRlLXRhc2stZGVmaW5pdGlvbiIsCiAgICAgICAgICAiYXdzbG9ncy1yZWdpb24iOiAidXMtZWFzdC0xIiwKICAgICAgICAgICJhd3Nsb2dzLXN0cmVhbS1wcmVmaXgiOiAiZWNzIgogICAgICAgIH0KICAgICAgfSwKICAgICAgIm5hbWUiOiAic2FtcGxlLWZhcmdhdGUtYXBwIiwKICAgICAgInBvcnRNYXBwaW5ncyI6IFsKICAgICAgICB7CiAgICAgICAgICAiY29udGFpbmVyUG9ydCI6IDgwLAogICAgICAgICAgImhvc3RQb3J0IjogODAsCiAgICAgICAgICAicHJvdG9jb2wiOiAidGNwIgogICAgICAgIH0KICAgICAgXQogICAgfQogIF0sCiAgImNwdSI6ICIyNTYiLAogICJleGVjdXRpb25Sb2xlQXJuIjogImFybjphd3M6aWFtOjowMTIzNDU2Nzg5MTA6cm9sZS9lY3NUYXNrRXhlY3V0aW9uUm9sZSIsCiAgImZhbWlseSI6ICJmYXJnYXRlLXRhc2stZGVmaW5pdGlvbiIsCiAgIm1lbW9yeSI6ICI1MTIiLAogICJuZXR3b3JrTW9kZSI6ICJhd3N2cGMiLAogICJydW50aW1lUGxhdGZvcm0iOiB7CiAgICAib3BlcmF0aW5nU3lzdGVtRmFtaWx5IjogIkxJTlVYIgogIH0sCiAgInJlcXVpcmVzQ29tcGF0aWJpbGl0aWVzIjogWwogICAgIkZBUkdBVEUiCiAgXQp9"
 }
 
 
@@ -39,34 +80,42 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 
 
-### retrieve secret value
-GET {{baseUrl}}/api/entry/secret-value?v=/development/crossborder-api/database-url
+
+### template stage
+GET {{baseUrl}}/api/box/example-ecs1/development
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
-
 ### check exist template
-HEAD {{baseUrl}}/api/box/widget-x/development/task_definition.json
+HEAD {{baseUrl}}/api/box/example-yaml/development/template-example.yaml
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 
 ### get template
-GET {{baseUrl}}/api/box/example/development/task_definition.json
+GET {{baseUrl}}/api/box/example-ecs1/development/task-definition.json
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 
 ### vars template
-GET {{baseUrl}}/api/box/example/development/task_definition.json/vars
+GET {{baseUrl}}/api/box/example-ecs1/development/task-definition.json/vars
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 
 ### build template
-GET {{baseUrl}}/api/box/crossborder-api/development/task_definition.json/build
+#GET {{baseUrl}}/api/box/example-yaml/development/template-example.yaml/build
+GET {{baseUrl}}/api/box/demos/beta/task_definition.json/build?image-name=825421293478.dkr.ecr.us-west-2.amazonaws.com/demos:master-e8ef047c51bb601f1f16fb79aed7cf5b52ef57f9-17-1
+#GET {{baseUrl}}/api/box/example-yaml/development/template-example.yaml/build?strict
 Authorization: Bearer {{token}}
 Content-Type: application/json
+
+### ListSchemaTypes
+GET {{baseUrl}}/api/box/schemas
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
 
 
 ### create
@@ -75,7 +124,21 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 
 [
-  {"key": "global/example/var001", "value": "test.com"}
+  {"key": "global/example/var001", "value": "var en dynamodb v5"},
+  {"key": "global/example/var-ultra-secret", "value": "var en dynamodb v5", "secure": true},
+  {"key": "global/example/var-ultra-secret2", "value": "var en dynamodb v5.1", "secure": true},
+  {"key": "development/serverless/url-example", "value": "valor en parameter store v5"},
+  {"key": "development/example/name", "value": "nbox v1"},
+  {"key": "passbox/vault-1", "value": "pass ultra secret v5"}
+]
+
+### create passbox
+POST {{baseUrl}}/api/entry
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+[
+  {"key": "passbox/av2/account-pepe", "value": "usando nats ok 2.3"}
 ]
 
 
@@ -108,23 +171,53 @@ Content-Type: application/json
 
 
 ### Get key
-GET {{baseUrl}}/api/entry/key?v=global/example/debug
+GET {{baseUrl}}/api/entry/key?v=development/example/name
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 
+### retrieve secret value
+GET {{baseUrl}}/api/entry/resolve?v=global/github-actions/github-npm-auth-token
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+
+### retrieve many keys
+POST {{baseUrl}}/api/entry/lookup
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+[
+  "production/prometeo/access_token_coinag_api_ar",
+  "production/prometeo/alfin_client_id",
+  "production/prometeo/alfin_client_secret"
+]
+
+
+
 ### Get prefix
-GET {{baseUrl}}/api/entry/prefix?v=development/
+GET {{baseUrl}}/api/entry/prefix?v=/
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+
+### Get prefix clean
+GET {{baseUrl}}/api/entry/prefix?v=beta/&leaves
 Content-Type: application/json
 Authorization: Bearer {{token}}
 
 
 ### list tracking history
-GET {{baseUrl}}/api/track/key?v=global/example/unique-key6
+GET {{baseUrl}}/api/track/key?v=passbox/vault-1&from=15d
 Content-Type: application/json
 Authorization: Bearer {{token}}
 
 
+
+### all stages
+GET {{baseUrl}}/api/static/stages
+Content-Type: application/json
+Authorization: Bearer {{token}}
 
 ### all environments
 GET {{baseUrl}}/api/static/environments
@@ -132,13 +225,62 @@ Content-Type: application/json
 Authorization: Bearer {{token}}
 
 ### Delete key
-DELETE {{baseUrl}}/api/entry/key?v=widget-x/development3
+DELETE {{baseUrl}}/api/entry/key?v=developmentexample/
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 
 
 ### Export entries
-GET {{baseUrl}}/api/entry/export?prefix=global/example&format=ecs
+GET {{baseUrl}}/api/entry/export?prefix=global/example&format=json
 Authorization: Bearer {{token}}
 Content-Type: application/json
+
+
+
+### List all Prefix config
+GET {{baseUrl}}/api/prefix
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+
+
+### Resolve Prefix config
+GET {{baseUrl}}/api/prefix/resolve?v=production/nats
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+
+
+### Backends Prefix config
+GET {{baseUrl}}/api/prefix/backends
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+
+### boxspec Resolve (export JSON Schema)
+GET {{baseUrl}}/api/boxspec/resolve?pattern=task-definition1.json
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+
+### boxspec List
+GET {{baseUrl}} /api/boxspec/specs
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+
+### boxspec reload
+POST {{baseUrl}} /api/boxspec/reload
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+### boxspec validate task-definition.json
+POST {{baseUrl}}/api/boxspec/validate
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "filename": "task-definition.json",
+  "content": "ewogICJjb250YWluZXJEZWZpbml0aW9ucyI6IFsKICAgIHsKICAgICAgImNvbW1hbmQiOiBbCiAgICAgICAgIi9iaW4vc2ggLWMgXCJlY2hvICc8aHRtbD4gPGhlYWQ+IDx0aXRsZT5BbWF6b24gRUNTIFNhbXBsZSBBcHA8L3RpdGxlPiA8c3R5bGU+Ym9keSB7bWFyZ2luLXRvcDogNDBweDsgYmFja2dyb3VuZC1jb2xvcjogIzMzMzt9IDwvc3R5bGU+IDwvaGVhZD48Ym9keT4gPGRpdiBzdHlsZT1jb2xvcjp3aGl0ZTt0ZXh0LWFsaWduOmNlbnRlcj4gPGgxPkFtYXpvbiBFQ1MgU2FtcGxlIEFwcDwvaDE+IDxoMj5Db25ncmF0dWxhdGlvbnMhPC9oMj4gPHA+WW91ciBhcHBsaWNhdGlvbiBpcyBub3cgcnVubmluZyBvbiBhIGNvbnRhaW5lciBpbiBBbWF6b24gRUNTLjwvcD4gPC9kaXY+PC9ib2R5PjwvaHRtbD4nID4gIC91c3IvbG9jYWwvYXBhY2hlMi9odGRvY3MvaW5kZXguaHRtbCAmJiBodHRwZC1mb3JlZ3JvdW5kXCIiCiAgICAgIF0sCiAgICAgICJlbnRyeVBvaW50IjogWwogICAgICAgICJzaCIsCiAgICAgICAgIi1jIgogICAgICBdLAogICAgICAiZXNzZW50aWFsIjogdHJ1ZSwKICAgICAgImltYWdlIjogInB1YmxpYy5lY3IuYXdzL2RvY2tlci9saWJyYXJ5L2h0dHBkOjIuNCIsCiAgICAgICJsb2dDb25maWd1cmF0aW9uIjogewogICAgICAgICJsb2dEcml2ZXIiOiAiYXdzbG9ncyIsCiAgICAgICAgIm9wdGlvbnMiOiB7CiAgICAgICAgICAiYXdzbG9ncy1ncm91cCIgOiAiL2Vjcy9mYXJnYXRlLXRhc2stZGVmaW5pdGlvbiIsCiAgICAgICAgICAiYXdzbG9ncy1yZWdpb24iOiAidXMtZWFzdC0xIiwKICAgICAgICAgICJhd3Nsb2dzLXN0cmVhbS1wcmVmaXgiOiAiZWNzIgogICAgICAgIH0KICAgICAgfSwKICAgICAgIm5hbWUiOiAic2FtcGxlLWZhcmdhdGUtYXBwIiwKICAgICAgInBvcnRNYXBwaW5ncyI6IFsKICAgICAgICB7CiAgICAgICAgICAiY29udGFpbmVyUG9ydCI6IDgwLAogICAgICAgICAgImhvc3RQb3J0IjogODAsCiAgICAgICAgICAicHJvdG9jb2wiOiAidGNwIgogICAgICAgIH0KICAgICAgXQogICAgfQogIF0sCiAgImNwdSI6ICIyNTYiLAogICJleGVjdXRpb25Sb2xlQXJuIjogImFybjphd3M6aWFtOjowMTIzNDU2Nzg5MTA6cm9sZS9lY3NUYXNrRXhlY3V0aW9uUm9sZSIsCiAgImZhbWlseSI6ICJmYXJnYXRlLXRhc2stZGVmaW5pdGlvbiIsCiAgIm1lbW9yeSI6ICI1MTIiLAogICJuZXR3b3JrTW9kZSI6ICJhd3N2cGMiLAogICJydW50aW1lUGxhdGZvcm0iOiB7CiAgICAib3BlcmF0aW5nU3lzdGVtRmFtaWx5IjogIkxJTlVYIgogIH0sCiAgInJlcXVpcmVzQ29tcGF0aWJpbGl0aWVzIjogWwogICAgIkZBUkdBVEUiCiAgXQp9"
+}

@@ -1,3 +1,9 @@
 {
-  "whitelist": ["GET:/health$", "POST:/api/auth/token$", "(GET|POST):/swagger/", "GET:/api/static/environments$"]
+  "whitelist": [
+    "GET:/health$",
+    "GET:/status$",
+    "GET:/ready$",
+    "POST:/api/auth/token$",
+    "(GET|POST):/swagger/"
+  ]
 }

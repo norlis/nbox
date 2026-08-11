@@ -11,8 +11,8 @@ El archivo `tools.go` importa los paquetes de las herramientas. La etiqueta de c
 Para instalar todas las herramientas definidas en `go.mod`, ejecuta el siguiente comando desde la raíz del proyecto. Esto instalará los binarios en tu `$GOPATH/bin`.
 
 ```bash
-# Sincroniza las dependencias de herramientas
+# Desde la raíz del proyecto (o dentro de la carpeta tools):
+cd tools
 go mod tidy
-
-# Instala las herramientas
-cat tools/tools.go | grep _ | awk -F'"' '{print $2}' | xargs -tI % go install %
+go list -e -f '{{range .Imports}}{{.}} {{end}}' -tags=tools tools.go | xargs go install -v
+```

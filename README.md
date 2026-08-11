@@ -2,6 +2,27 @@
 
 NBOX es un servicio backend escrito en Go, diseñado para actuar como una solución centralizada y segura para la administración de variables de entorno, secretos y plantillas de configuración en entornos de desarrollo modernos.
 
+## Tabla de contenidos
+
+- [Características Principales](#características-principales)
+- [Componentes](#componentes)
+- [Guía de Inicio Rápido](#guía-de-inicio-rápido)
+  - [Prerrequisitos](#prerrequisitos)
+  - [Instalación y Ejecución Local](#instalación-y-ejecución-local)
+- [Referencia de la API](#referencia-de-la-api)
+  - [Autenticación](#autenticación)
+  - [Gestión de Variables (Entries)](#gestión-de-variables-entries)
+  - [Gestión de Plantillas (Templates)](#gestión-de-plantillas-templates)
+  - [Configuración](#configuración)
+  - [Desarrollo](#desarrollo)
+- [CLI de administración (`nbox-cli`)](#cli-de-administración-nbox-cli)
+- [Deployment](#deployment)
+- [Arquitectura](#arquitectura)
+- [Project Structure](#project-structure)
+- [Security playground](#security-playground)
+- [Agentes M2M (entrypushd gRPC)](#agentes-m2m-entrypushd-grpc)
+- [TODO](#todo)
+
 ---
 
 ## Características Principales
@@ -15,6 +36,24 @@ NBOX es un servicio backend escrito en Go, diseñado para actuar como una soluci
 -   **Seguridad Robusta**:
   -   **Autenticación**: Soporta tanto **HTTP Basic Auth** como **JWT** para proteger los endpoints.
   -   **Autorización**: Utiliza **Open Policy Agent (OPA)** para un control de acceso granular y basado en roles.
+
+---
+
+## Componentes
+
+NBOX se compone de **dos servicios** y una **CLI** de administración:
+
+| Componente | Qué es | Puerto |
+|---|---|---|
+| **`nbox`** | Microservicio HTTP: API REST de entries, templates (box), export, tracking y auth (JWT/Basic + OPA). | `7337` |
+| **`entrypushd`** | Subscriber NATS + servidor gRPC (`KVStream/Watch`): empuja cambios a **agentes** en tiempo real, con auth M2M (AppRole / AWS-STS) y entrega **HPKE** para secretos vault. | `9337` |
+| **`nbox-cli`** | Tooling de administración: hashes, credenciales M2M, prefix routing y config dinámica. | — |
+
+**Almacenamiento:** DynamoDB (entries / config / tracking), Parameter Store + KMS (secretos), S3 (templates).
+
+Esta guía cubre principalmente `nbox`. Para `entrypushd` y los agentes ver
+[Agentes M2M (entrypushd gRPC)](#agentes-m2m-entrypushd-grpc); para la CLI ver
+[CLI de administración](#cli-de-administración-nbox-cli).
 
 ---
 
@@ -43,7 +82,7 @@ NBOX es un servicio backend escrito en Go, diseñado para actuar como una soluci
     export NBOX_BUCKET_NAME=tu-bucket-nbox-development
     export NBOX_BASIC_AUTH_CREDENTIALS='{"user":{"password": "$2a$10$...", "roles": ["admin"], "status": "active"}}'
     ```
-    > **Nota**: Para generar el hash de la contraseña, puedes usar la herramienta `hasher` incluida en `cmd/hasher`.
+    > **Nota**: Para generar el hash de la contraseña usá `nbox-cli config user upsert --username admin --password '...' --emit-env`; el flag `--emit-env` imprime `export NBOX_BASIC_AUTH_CREDENTIALS=…` sin tocar DynamoDB.
 
 3.  **Instalar dependencias y herramientas**:
     ```shell
@@ -60,7 +99,24 @@ NBOX es un servicio backend escrito en Go, diseñado para actuar como una soluci
 
 ## Referencia de la API
 
-A continuación se muestran los endpoints principales y ejemplos de uso.
+La referencia **completa e interactiva** de todos los endpoints está en
+**Swagger UI: `GET /swagger/`** (spec en [`docs/`](./docs/README.md), regenerable
+con `make docs`). Abajo se documentan solo los flujos más comunes.
+
+Familias de endpoints (todas bajo `/api`, requieren auth salvo `/auth/token`):
+
+| Familia | Endpoints |
+|---|---|
+| **auth** | `POST /auth/token` |
+| **me** | `GET /me/permissions` |
+| **entry** | `POST /entry`, `GET /entry/key`, `GET /entry/prefix`, `DELETE /entry/key`, `GET /entry/resolve`, `POST /entry/lookup`, `GET /entry/export` |
+| **box** (templates) | `POST\|GET\|HEAD /box/{service}/{stage}/{template}`, `GET /box/{service}/{stage}`, `…/build`, `…/vars`, `GET /box`, `GET /box/schemas` |
+| **boxspec** (CUE) | `GET /boxspec/specs`, `GET /boxspec/resolve`, `POST /boxspec/reload`, `POST /boxspec/validate` |
+| **prefix** | `GET /prefix`, `GET /prefix/backends`, `GET /prefix/resolve` |
+| **track** | `GET /track/key` |
+| **static** | `GET /static/stages` |
+
+A continuación, ejemplos de los flujos más comunes.
 
 ### Autenticación
 
@@ -71,6 +127,15 @@ Genera un token JWT para autenticar las siguientes peticiones.
 curl -X POST -H "Content-Type: application/json" \
   -d '{"username": "user", "password": "pass"}' \
   http://localhost:7337/api/auth/token
+```
+
+#### `GET /api/me/permissions`
+Devuelve los permisos (nombres + patrones de recurso) que OPA concede a los roles
+del caller autenticado. Útil como **hint de UI**; no es un límite de seguridad.
+
+```shell
+curl -X GET "http://localhost:7337/api/me/permissions" \
+    -H "Authorization: Bearer ${TOKEN}" | jq
 ```
 
 ### Gestión de Variables (Entries)
@@ -106,103 +171,54 @@ curl -X GET "http://localhost:7337/api/entry/key?v=global/example/email_user" \
     --user "user:pass" | jq
 ```
 
-#### `GET /api/entry/secret-value?v=<full-key-path>`
-Obtiene el valor de un secreto específico.
+#### `GET /api/entry/resolve?v=<full-key-path>`
+Resuelve el valor de un secreto específico (lo descifra desde Parameter Store).
 
 ```shell
-curl -X GET "http://localhost:7337/api/entry/secret-value?v=global/example/email_password" \
+curl -X GET "http://localhost:7337/api/entry/resolve?v=global/example/email_password" \
     --user "user:pass" | jq
 ```
 
+> `GET /api/entry/secret-value` fue **eliminado** — usá `/api/entry/resolve`. `POST /api/box` (body) está **deprecado** — usá `POST /api/box/{service}/{stage}/{template}`.
+
 ### Gestión de Plantillas (Templates)
 
-#### `POST /api/box`
-Crea o actualiza una plantilla para un servicio en uno o más entornos. El valor de la plantilla debe estar codificado en Base64.
+Las plantillas pueden ser **JSON, YAML o texto plano** — se guardan en S3 en Base64.
+Dentro del contenido:
+- `{{ key/path }}` → se sustituye por el valor de la variable/secreto al hacer `build`.
+- `:var` → placeholder reemplazado por query params en `build` (ej. `?var=valor`).
+
+**Validación con CUE:** opcionalmente las plantillas se validan contra esquemas
+[CUE](https://cuelang.org/) (archivos `.cue` en `specs/`). Los endpoints `boxspec`
+gestionan esos esquemas: `GET /api/boxspec/specs` (lista), `GET /api/boxspec/resolve`
+(esquema aplicable), `POST /api/boxspec/validate` (valida un template contra su
+esquema) y `POST /api/boxspec/reload` (recarga desde disco). `GET /api/box/schemas`
+lista los tipos de esquema disponibles.
+
+#### `POST /api/box/{service}/{stage}/{template}`
+Crea o actualiza una plantilla. `service`/`stage`/`template` van en la **ruta**; el body lleva el contenido en **Base64**. Dentro del template, `{{key}}` referencia variables/secretos y `:var` son placeholders sustituidos al hacer `build`.
 
 ```shell
-# task-definition.json (contenido de ejemplo)
-# TEMPLATE_B64=$(cat task-definition.json | base64)
-
-TEMPLATE_B64=$(cat <<EOF | base64 
+TEMPLATE=$(cat <<'EOF' | base64
 {
-  "requiresCompatibilities": [
-    "EC2"
-  ],
-  "containerDefinitions": [
-    {
-      "name": "nginx",
-      "image": ":image-name",
-      "memory": 256,
-      "cpu": 256,
-      "essential": true,
-      "portMappings": [
-        {
-          "containerPort": 80,
-          "protocol": "tcp"
-        }
-      ],
-      "secrets": [
-        {
-          "name": "EMAIL_PASSWORD",
-          "valueFrom": "{{global/example/email_password}}"
-        }
-      ],
-      "environment": [
-        {
-          "name": "ENVIRONMENT_NAME",
-          "value": ":stage"
-        },
-        {
-          "name": "EMAIL_USER",
-          "value": "{{ global/example/email_user }}"
-        }
-      ],
-      "logConfiguration": {
-        "logDriver": "awslogs",
-        "options": {
-          "awslogs-group": "/ecs/nginx_:stage",
-          "awslogs-region": "us-east-1",
-          "awslogs-stream-prefix": "nginx"
-        }
-      },
-      "healthCheck": {
-        "command": [
-          "CMD-SHELL",
-          "wget --no-verbose --tries=1 -O /dev/null --quiet http://localhost || exit 1"
-        ],
-        "interval": 30,
-        "timeout": 10,
-        "retries": 3,
-        "startPeriod": 10
-      }
-    }
-  ],
-  "volumes": [],
-  "placementConstraints": [],
+  "containerDefinitions": [{
+    "name": "nginx",
+    "image": ":image-name",
+    "secrets": [{ "name": "EMAIL_PASSWORD", "valueFrom": "{{global/example/email_password}}" }],
+    "environment": [{ "name": "EMAIL_USER", "value": "{{ global/example/email_user }}" }]
+  }],
   "family": "nginx"
 }
 EOF
 )
-  
-PAYLOAD=$(<<EOF 
-{
-  "payload": {
-    "service": "example",
-    "stage": {
-      "development": {
-        "template": { "name": "task_definition.json", "value": "${TEMPLATE_B64}" }
-      }
-    }
-  }
-}
-EOF
-)
 
-curl -X POST "http://localhost:7337/api/box" \
+curl -X POST "http://localhost:7337/api/box/example/development/task-definition.json" \
     -H "Content-Type: application/json" \
-    -d "${PAYLOAD}" \
+    -d "{\"content\": \"${TEMPLATE}\"}" \
     --user "user:pass" | jq
 ```
+
+> `POST /api/box` (con payload anidado `{"payload":{"service","stage":{...}}}`) está **deprecado** — usá la forma con la ruta `{service}/{stage}/{template}`.
 
 
 #### `GET /api/box/{service}/{stage}/{template}`
@@ -223,20 +239,69 @@ curl "http://localhost:7337/api/box/example/development/task_definition.json/bui
 
 
 ### Configuración
-El servicio se configura mediante variables de entorno:
 
-| Variable                                 | Descripción                                                                 | Valor por Defecto             |
-|------------------------------------------|------------------------------------------------------------------------------|-------------------------------|
-| `NBOX_ALLOWED_PREFIXES`                  | Lista de prefijos de entorno permitidos, separados por comas.               | `development/,qa/,beta/,...` |
-| `NBOX_DEFAULT_PREFIX`                    | Prefijo por defecto si no se especifica uno (`global/`).                    | `global`                      |
-| `NBOX_BASIC_AUTH_CREDENTIALS`            | JSON con las credenciales de usuario para la autenticación básica.          | `-`                           |
-| `NBOX_BOX_TABLE_NAME`                    | Nombre de la tabla DynamoDB para la metadata de las plantillas.             | `nbox-box-table`             |
-| `NBOX_BUCKET_NAME`                       | Nombre del bucket S3 para almacenar las plantillas.                         | `nbox-store`                 |
-| `NBOX_ENTRIES_TABLE_NAME`               | Nombre de la tabla DynamoDB para las variables.                             | `nbox-entry-table`           |
-| `NBOX_TRACKING_ENTRIES_TABLE_NAME`       | Nombre de la tabla DynamoDB para el historial de cambios.                   | `nbox-tracking-entry-table`  |
-| `NBOX_PARAMETER_STORE_KEY_ID`            | ID de la clave KMS para cifrar los secretos en Parameter Store.             | `-`                           |
-| `NBOX_PARAMETER_STORE_SHORT_ARN`         | `true` para almacenar el nombre del parámetro, `false` para el ARN completo.| `false`                       |
-| `HMAC_SECRET_KEY`                        | Clave secreta para firmar los tokens JWT.                                   | `Una clave predeterminada`   |
+La configuración es por **variable de entorno**, separada por binario. Todas se cargan y validan al arranque mediante el pipeline tipado (`pkg/env`).
+
+#### Comunes (ambos binarios)
+
+| Variable          | Descripción                                              | Default       |
+|-------------------|----------------------------------------------------------|---------------|
+| `NBOX_ENV`        | Contexto de despliegue (dev / staging / prod).           | `development` |
+| `LOG_LEVEL`       | Nivel de log: `debug` / `info` / `warn` / `error`.       | `info`        |
+| `AWS_REGION`      | Región AWS (la consume el SDK de AWS).                   | _(entorno AWS)_ |
+| `NBOX_CONFIG_TABLE_NAME` | Tabla DynamoDB de config dinámica de auth (vacío ⇒ solo env). | _(vacío)_ |
+| `NBOX_CONFIG_TTL` | Intervalo de refresh de la caché de config.              | `45s`         |
+| `NATS_URL`        | URL del server NATS (bus de eventos fan-out).            | `nats://localhost:4222` |
+
+> `NBOX_CONFIG_TABLE_NAME`/`NBOX_CONFIG_TTL` habilitan resolver
+> `NBOX_BASIC_AUTH_CREDENTIALS`, `NBOX_APPROLE_ROLES` y `NBOX_AWS_ARN_MAP` desde
+> DynamoDB cuando la env está vacía (cadena env→DynamoDB, sin reinicio). Ver
+> [CLI de administración](#cli-de-administración-nbox-cli).
+
+#### `nbox` — microservice (HTTP, puerto 7337)
+
+| Variable                            | Descripción                                                                 | Default                                     |
+|-------------------------------------|------------------------------------------------------------------------------|---------------------------------------------|
+| `HMAC_SECRET_KEY`                   | Clave HMAC para firmar JWT. **Requerido**; debe coincidir con entrypushd.   | _(requerido)_                               |
+| `NBOX_BASIC_AUTH_CREDENTIALS`       | JSON object keyed por username `{"user":{"password","roles","status"}}` para Basic Auth. | _(vacío)_                                   |
+| `NBOX_BUCKET_NAME`                  | Bucket S3 para plantillas.                                                  | `nbox-store`                                |
+| `NBOX_ENTRIES_TABLE_NAME`           | Tabla DynamoDB de entries.                                                  | `nbox-entry-table`                          |
+| `NBOX_TRACKING_ENTRIES_TABLE_NAME`  | Tabla DynamoDB de historial de cambios.                                     | `nbox-tracking-entry-table`                 |
+| `NBOX_BOX_TABLE_NAME`               | Tabla DynamoDB de metadata de plantillas.                                   | `nbox-box-table`                            |
+| `NBOX_PARAMETER_STORE_KEY_ID`       | ARN de la clave KMS para cifrar secretos en Parameter Store.                | _(vacío)_                                   |
+| `NBOX_PARAMETER_STORE_SHORT_ARN`    | `true` = nombre corto del parámetro; `false` = ARN completo.                | `true`                                      |
+| `NBOX_DEFAULT_PREFIX`               | Prefijo por defecto si no se especifica.                                    | `global`                                    |
+| `NBOX_STAGES`                       | Stages válidos (CSV).                                                       | `development,qa,beta,sandbox,production,dr` |
+| `NBOX_SPECS_PATH`                   | Ruta a los specs CUE de validación.                                         | `/etc/nbox/specs`                           |
+| `INSTANCE_NAME`                     | Nombre de instancia (prefijo de los archivos de export).                    | `nbox`                                      |
+| `NBOX_CSRF_TRUSTED_ORIGINS`         | Orígenes de browser confiables para CSRF (CSV `scheme://host[:port]`).      | _(vacío)_                                   |
+
+Eventos (publisher NATS, solo en `nbox`):
+
+| Variable                       | Descripción                                                        | Default |
+|--------------------------------|--------------------------------------------------------------------|---------|
+| `NBOX_EVENT_PUBLISH`           | Habilita la publicación de eventos.                                | `true`  |
+| `NBOX_EVENT_SOURCE`            | `source` del CloudEvent emitido.                                   | `nbox`  |
+| `NBOX_EVENT_MAX_ATTEMPTS`      | Reintentos de publicación.                                         | `3`     |
+| `NBOX_EVENT_INITIAL_BACKOFF`   | Backoff inicial entre reintentos.                                  | `100ms` |
+| `NBOX_EVENT_MAX_BACKOFF`       | Backoff máximo entre reintentos.                                   | `1s`    |
+
+> Flags (no env): `--port` (default `7337`) y `--address` (default vacío = todas las interfaces).
+
+#### `entrypushd` — consumer SQS + servidor gRPC (puerto 9337)
+
+| Variable                  | Descripción                                                                          | Default       |
+|---------------------------|--------------------------------------------------------------------------------------|---------------|
+| `HMAC_SECRET_KEY`         | Clave HMAC para verificar/firmar JWT M2M. **Requerido**; **debe coincidir** con nbox.| _(requerido)_ |
+| `ENTRYPUSHD_GRPC_LISTEN`  | Dirección de bind del servidor gRPC (`KVStream/Watch`).                              | `:9337`       |
+| `NBOX_APPROLE_ROLES`      | JSON array de definiciones AppRole. Vacío ⇒ rechaza toda autenticación.              | _(vacío)_     |
+| `NBOX_AWS_ARN_MAP`        | JSON array de mapeos ARN para el esquema AWS-STS. Vacío ⇒ deshabilita AWS-STS.       | _(vacío)_     |
+| `NBOX_APPROLE_DISABLED`   | Kill switch: `true` rechaza todo intento de auth (`Unavailable`).                    | `false`       |
+| `ENTRYPUSHD_NBOX_URL`     | URL base HTTP de nbox para el snapshot del `Watch` (p.ej. `http://nbox:7337`). Vacío ⇒ deshabilita el snapshot; el `Watch` solo streamea deltas. | _(vacío)_     |
+
+#### `nbox-cli` — tooling de administración
+
+Orientado a flags/argumentos: `prefix` (routing de prefijos) y `config` (administración de usuarios/AppRole/AWS-STS en la tabla de config dinámica; `--emit-env` para generar env vars localmente sin DynamoDB). Ver [CLI de administración](#cli-de-administración-nbox-cli). Usa `AWS_REGION` y `--table`/`NBOX_CONFIG_TABLE_NAME`.
 
 
 ### Desarrollo
@@ -254,57 +319,80 @@ El servicio se configura mediante variables de entorno:
   - `make test`: Ejecuta las pruebas unitarias
   - `make tools`: Instala las herramientas de desarrollo
 
-#### Generación de Documentación OpenAPI (Swagger)
+#### Documentación OpenAPI (Swagger)
 
 ```shell
 make docs
 ```
 
-**(Open API)[https://github.com/swaggo/swag?tab=readme-ov-file#the-swag-formatter]**
-```go
-// UpsertBox
-// @Summary Upsert templates
-// @Description insert or update templates on s3
-// @Tags templates
-// @Accept json
-// @Produce json
-// @Param data body models.Box true "Upsert template"
-// @Success 200 {object} []string ""
-// @Failure 400 {object} problem.ProblemDetail "Bad Request"
-// @Failure 401 {object} problem.ProblemDetail "Unauthorized"
-// @Failure 403 {object} problem.ProblemDetail "Forbidden"
-// @Failure 404 {object} problem.ProblemDetail "Not Found"
-// @Failure 500 {object} problem.ProblemDetail "Internal error"
-// @Router /api/box [post]
+Genera la spec desde las anotaciones de los handlers. El formato de anotaciones,
+los archivos generados y el endpoint `GET /swagger/` están documentados en
+[`docs/README.md`](./docs/README.md).
+
+
+## CLI de administración (`nbox-cli`)
+
+Herramienta de administración para tareas operativas: generar credenciales,
+sembrar configuración y administrar la tabla de config dinámica. Se construye con
+`make build` (binario `cli`, invocado como `nbox-cli` en el PATH). El flag
+`--region` (`-r`) es global; si no se pasa, se usa `AWS_REGION`/resolución del SDK. Los writes registran en `updated_by` el ARN del principal AWS que ejecutó el comando (fallback `nbox-cli` si STS no responde).
+
+| Comando | Para qué sirve |
+|---|---|
+| `nbox-cli config user upsert --username <u> --password <p> --roles <r> [--emit-env]` | Crea/actualiza un usuario Basic Auth en DynamoDB; `--emit-env` imprime `export NBOX_BASIC_AUTH_CREDENTIALS=…` para local dev sin tocar DynamoDB. |
+| `nbox-cli config approle generate --name <n> --roles <r> [--emit-env]` | Crea una credencial M2M (`role_id` + `secret_id` + hash) en DynamoDB; `--emit-env` imprime `export NBOX_APPROLE_ROLES=…` en lugar de persistir. |
+| `nbox-cli config approle rotate-secret <role_id>` \| `rotate-secret --emit-env` | Genera un nuevo `secret_id` + hash para rotar sin downtime (append al array `secret_hashes`); `--emit-env` no persiste: imprime el **fragmento** `SecretHash` para appendear a mano en `NBOX_APPROLE_ROLES` (no es el env var completo). |
+| `nbox-cli config aws-sts upsert --arn <arn> --roles <r> [--emit-env]` | Crea/actualiza un mapeo ARN→roles para el esquema AWS-STS; `--emit-env` imprime `export NBOX_AWS_ARN_MAP=…` sin tocar DynamoDB. |
+| `nbox-cli config <user\|aws-sts\|approle> <list\|rm>` | Lista o elimina entidades de auth de la tabla de config dinámica (DynamoDB). |
+| `nbox-cli prefix upsert --prefix <p> [--type <backend>] [--table <t>]` | Crea/actualiza una entrada de routing de prefijo en la tabla config. |
+| `nbox-cli prefix list [--json] [--table <t>]` | Lista todas las configuraciones de prefijo. |
+| `nbox-cli prefix rm <prefix> [--force] [--table <t>]` | Borra una configuración de prefijo. |
+
+### `nbox-cli config` — config dinámica sin reinicio
+
+Escribe entidades de auth en la tabla `NBOX_CONFIG_TABLE_NAME` (o `--table`).
+Los cambios propagan a todas las réplicas en ≤ `NBOX_CONFIG_TTL`. Ver
+
+```bash
+# usuarios de Basic Auth (el password se bcryptea solo)
+nbox-cli config user upsert --username admin --password '...' --roles admin,editor
+nbox-cli config user list
+nbox-cli config user rm admin
+
+# mapeos ARN para AWS-STS (M2M)
+nbox-cli config aws-sts upsert --arn arn:aws:iam::123:role/foo --roles entrypushd
+nbox-cli config aws-sts list
+
+# AppRoles M2M (genera role_id + secret_id y los persiste)
+nbox-cli config approle generate --name watcher --roles entrypushd [--cidrs 10.0.0.0/8]
+nbox-cli config approle list
+nbox-cli config approle rm <role_id>
 ```
 
-Descripción de las anotaciones
-1.	**@Summary y @Description**
-      •	@Summary: Describe brevemente lo que hace el endpoint.
-      •	@Description: Proporciona una explicación más detallada.
-2.	**@Tags**
-      •	Úsalo para categorizar endpoints, por ejemplo, “usuarios”, “productos”, etc.
-3.	**@Accept y @Produce**
-      •	@Accept: Especifica el tipo de contenido esperado (en este caso, JSON).
-      •	@Produce: Especifica el tipo de contenido que el endpoint devolverá (en este caso, JSON).
-4.	**@Param**
-      •	Define los parámetros de la solicitud.
-      •	body: Indica que el parámetro está en el cuerpo.
-      •	CreateRequest: Estructura esperada.
-      •	true: Especifica si es obligatorio.
-5.	**@Success y @Failure**
-      •	@Success: Describe una respuesta exitosa.
-      •	@Failure: Describe posibles respuestas de error.
-6.	**@Router**
-      •	Especifica la ruta y el método HTTP (en este caso, POST).
-
+> Los `list` nunca muestran material sensible (bcrypt hashes / `secret_hashes`).
+> Para revocación inmediata usar el kill-switch `NBOX_APPROLE_DISABLED`.
 
 ## Deployment
 
 ### build docker
+
+Hay dos imágenes (targets del Dockerfile): `nbox` y `entrypushd`. **La arquitectura
+de la imagen debe coincidir con `runtimePlatform.cpuArchitecture` del task de ECS**
+(si no: `exec format error` al arrancar). El binario se compila para la `--platform`
+que pases (en Apple Silicon, sin `--platform`, sale **arm64**).
+
 ```bash
-docker buildx build --platform=linux/amd64 --target production -t nbox:1  --progress=plain .
+# amd64 / X86_64 (default de Fargate)
+docker buildx build --platform linux/amd64 --target nbox       -t <ecr>/nbox:1       --push .
+docker buildx build --platform linux/amd64 --target entrypushd -t <ecr>/entrypushd:1 --push .
+
+# arm64 / Graviton (task con cpuArchitecture: ARM64)
+docker buildx build --platform linux/arm64 --target nbox       -t <ecr>/nbox:1       --push .
+docker buildx build --platform linux/arm64 --target entrypushd -t <ecr>/entrypushd:1 --push .
 ```
+
+Verificá la arquitectura de la imagen: `docker image inspect <img> --format '{{.Architecture}}'`
+— debe ser igual al `cpuArchitecture` del task definition.
 
 ### example credentials
 
@@ -323,118 +411,103 @@ docker buildx build --platform=linux/amd64 --target production -t nbox:1  --prog
 
 ## Arquitectura
 
+Vista de **componentes en runtime** (los dos binarios, el flujo de eventos y los backends).
+La organización del código está en [Project Structure](#project-structure).
+
 ```mermaid
 ---
 config:
   layout: dagre
   theme: base
 ---
-flowchart TD
-    %% External Services
-    subgraph EXT["☁️ Servicios AWS"]
-        S3[("S3<br/>Templates")]
-        DDB[("DynamoDB<br/>Entries/Tracking")]
-        SSM[("SSM<br/>Secrets")]
+flowchart LR
+    HUMAN["👤 Humano / CI<br/>HTTP · JWT/Basic"]
+    AGENT["🤖 Agente / servicio<br/>gRPC · M2M"]
+    ADMIN["🔧 nbox-cli"]
+
+    subgraph NBOX["nbox · HTTP :7337"]
+        AUTH["Auth<br/>JWT/Basic + OPA"]
+        DOM["Dominios<br/>entry · box · export<br/>tracking · prefix"]
     end
 
-    %% Clients
-    subgraph CLI["🔧 Herramientas"]
-        HASHER["Hasher CLI<br/>Password Gen"]
-        CLIENT["HTTP Client<br/>API Consumer"]
+    subgraph EPS["entrypushd · :9337"]
+        NATSC["evento"]
+        GRPC["gRPC KVStream/Watch<br/>M2M (AppRole / AWS-STS)<br/>HPKE para vault"]
     end
 
-    %% Presentation Layer
-    subgraph PRES["🌐 Capa de Presentación"]
-        WEBUI["Web UI<br/>Events/Assets"]
-        AUTH["Auth Layer<br/>JWT/Basic/OPA"]
-        API["REST API<br/>Box/Entry/Static"]
-        SSE["SSE Events<br/>Real-time"]
+    subgraph AWS["☁️ AWS"]
+        DDB[("DynamoDB<br/>entries · config · tracking")]
+        SSM[("Parameter Store + KMS<br/>secretos")]
+        S3[("S3<br/>templates")]
+        BUS(("NATS<br/>fan-out"))
     end
 
-    %% Application Layer
-    subgraph APP["⚙️ Capa de Aplicación"]
-        BOXUC["BoxUseCase<br/>Template Builder"]
-        ENTRYUC["EntryUseCase<br/>Config Manager"]
-        PATHUC["PathUseCase<br/>Key Utils"]
-        EVENTUC["EventUseCase<br/>Notifications"]
-    end
+    HUMAN --> AUTH --> DOM
+    ADMIN -. escribe .-> DDB
+    DOM --> DDB & SSM & S3
+    DOM -- cambios --> BUS --> NATSC --> GRPC
+    AGENT --> GRPC
+    GRPC -. snapshot HTTP .-> DOM
+    DDB -. config dinámica .-> AUTH & GRPC
 
-    %% Domain Layer
-    subgraph DOM["🏛️ Capa de Dominio"]
-        MODELS["Domain Models<br/>Entry | Box | User<br/>Template | Event"]
-        PORTS["Interfaces<br/>EntryAdapter<br/>TemplateAdapter<br/>SecretAdapter"]
-    end
-
-    %% Infrastructure Layer
-    subgraph INFRA["🔌 Adaptadores"]
-        S3ADAPTER["S3 Template Store<br/>JSON Templates"]
-        DDBADAPTER["DynamoDB Backend<br/>Entries/Tracking"]
-        SSMADAPTER["SSM SecureStore<br/>Encrypted Secrets"]
-        MEMORY["InMemory UserRepo<br/>Auth Credentials"]
-        SSEADAPTER["SSE Broker<br/>Event Publisher"]
-    end
-
-    %% Health & Monitoring
-    subgraph HEALTH["📊 Observabilidad"]
-        STATUS["Health Checks<br/>Ready/Live"]
-        LOGS["Structured Logs<br/>Zap Logger"]
-    end
-
-    %% Connections - External
-    CLIENT --> AUTH
-    WEBUI --> SSE
-    
-    %% Connections - Flow
-    AUTH --> API
-    API --> BOXUC
-    API --> ENTRYUC
-    API --> EVENTUC
-    
-    BOXUC --> PATHUC
-    ENTRYUC --> EVENTUC
-    
-    %% Use Cases to Ports
-    BOXUC --> PORTS
-    ENTRYUC --> PORTS
-    EVENTUC --> PORTS
-    
-    %% Ports to Models
-    PORTS --> MODELS
-    
-    %% Adapters to Ports
-    S3ADAPTER -.-> PORTS
-    DDBADAPTER -.-> PORTS
-    SSMADAPTER -.-> PORTS
-    MEMORY -.-> PORTS
-    SSEADAPTER -.-> PORTS
-    
-    %% Infrastructure to External
-    S3ADAPTER --> S3
-    DDBADAPTER --> DDB
-    SSMADAPTER --> SSM
-    
-    %% Health Connections
-    STATUS --> S3ADAPTER
-    STATUS --> DDBADAPTER
-    STATUS --> SSMADAPTER
-
-    %% Styling
-    classDef external fill:#232F3E,stroke:#FF9900,stroke-width:3px,color:#fff
-    classDef cli fill:#2D3748,stroke:#4FD1C7,stroke-width:2px,color:#fff
-    classDef presentation fill:#E3F2FD,stroke:#1976D2,stroke-width:2px,color:#000
-    classDef application fill:#E8F5E8,stroke:#4CAF50,stroke-width:2px,color:#000
-    classDef domain fill:#FFF3E0,stroke:#FF9800,stroke-width:3px,color:#000
-    classDef infrastructure fill:#F3E5F5,stroke:#9C27B0,stroke-width:2px,color:#000
-    classDef health fill:#FFF5F5,stroke:#E53E3E,stroke-width:2px,color:#000
-
-    class S3,DDB,SSM external
-    class HASHER,CLIENT cli
-    class WEBUI,AUTH,API,SSE presentation
-    class BOXUC,ENTRYUC,PATHUC,EVENTUC application
-    class MODELS,PORTS domain
-    class S3ADAPTER,DDBADAPTER,SSMADAPTER,MEMORY,SSEADAPTER infrastructure
-    class STATUS,LOGS health
+    classDef client fill:#E8F5E8,stroke:#4CAF50,color:#000
+    classDef svc fill:#E3F2FD,stroke:#1976D2,color:#000
+    classDef aws fill:#232F3E,stroke:#FF9900,color:#fff
+    class HUMAN,AGENT,ADMIN client
+    class AUTH,DOM,NATSC,GRPC svc
+    class DDB,SSM,S3,BUS aws
 ```
+
+## Project Structure
+
+NBOX is organized using **Package-Oriented Design** combined with **Clean Architecture** principles. Each business domain is a self-contained package that owns its model, interfaces, business logic, HTTP handler, and storage adapter. Technical layers (all models together, all handlers together) are intentionally avoided.
+
+```
+cmd/
+  nbox/          → HTTP API binary (fx wiring only)
+  entrypushd/    → NATS subscriber + gRPC daemon (fx wiring only)
+  cli/           → admin CLI (prefix, config, seed)
+
+internal/
+  entry/         → Entry domain: model, stores (DynamoDB/SSM), service, HTTP handler
+  box/           → Box/template domain: model, S3 store, CUE spec, handler
+  export/        → Export domain: formats (dotenv, JSON)
+  tracking/      → Change history: model, DynamoDB store, handler
+  prefix/        → Prefix/stage configuration: model, DynamoDB store, handler
+  me/            → Identity/permissions endpoint (/api/me)
+  event/         → Event model + SNS publisher
+  auth/          → Auth: User/Identity, JWT, OPA, in-memory store; M2M (approle, awssts)
+  config/        → Dynamic config: env→DynamoDB resolution chain, snapshot cache, CLI admin store
+  entrypushd/    → entrypushd internals:
+                     grpc/       → gRPC server + auth interceptor
+                     handler/    → event broadcast
+                     nboxclient/ → snapshot HTTP client
+                     vault/      → HPKE sealing for passbox/*
+  transport/
+    http/        → Router + global middleware (JWT/Basic, CSRF) — no endpoint logic
+    httpx/       → HTTP render/presenter helpers
+  nbox/          → nbox-binary config (env vars)
+  application/   → shared app context + build metadata
+  platform/aws/  → AWS SDK config; DynamoDB/SSM/S3/SQS/SNS clients; health checkers
+
+pkg/             → Shared utilities (logger, env loader, resiliency)
+policies/        → OPA Rego authorization policies + tests
+specs/           → CUE schema files for template validation
+deployments/     → SAM template (DynamoDB tables, ConfigTable, S3 bucket)
+examples/        → gRPC client examples (Python / Go / shell)
+```
+
+### Key conventions
+
+**Each domain is autonomous.** Everything about `entry` lives in `internal/entry/`. To understand or modify an entry, you read one package.
+
+**Store interfaces live in the domain root.** The domain defines the contract; the implementation fulfills it.
+
+**Each domain exposes a `module.go`.** It declares its own `fx.Module` with providers and lifecycle hooks. `cmd/` only composes modules — it never calls `fx.Provide` directly.
+
+
+
+---
 
 ## Security playground
 
@@ -451,9 +524,38 @@ flowchart TD
 - **admin**: Acceso completo
 
 
-## stream events (SSE)
+## Agentes M2M (entrypushd gRPC)
 
-https://htmx.org/extensions/sse
+`entrypushd` expone un stream gRPC server-streaming (`stream.v1.KVStream/Watch`,
+puerto `9337`) para que **agentes/servicios** se suscriban a cambios de entries en
+tiempo real — eventos que nbox publica a **NATS** y que **todas** las instancias
+reciben (fan-out).
+
+**Autenticación M2M.** El agente presenta una credencial en la metadata gRPC
+`authorization: <scheme> <base64(...)>`; el interceptor la valida, mintea un JWT
+interno (15 min, `aud=[nbox,entrypushd]`) y lo inyecta. Dos esquemas:
+
+- **AppRole** — `AppRole <base64(JSON{role_id,secret_id})>`. Credenciales estáticas generadas con `nbox-cli config approle generate [--emit-env]`; el `secret_id` se matchea contra bcrypt hashes. Soporta rotación sin downtime (`config approle rotate-secret`) y restricción por CIDR.
+- **AWS-STS** — `AWS-STS <base64(...)>`, estilo Vault iam. El agente firma un
+  `GetCallerIdentity`; entrypushd lo reenvía a STS y matchea el ARN devuelto contra
+  `NBOX_AWS_ARN_MAP`. Ideal para workloads en AWS (instance profile / IRSA).
+
+Kill switch global: `NBOX_APPROLE_DISABLED=true`. Ver
+[AWSSTS-TESTING](./examples/grpc-client/AWSSTS-TESTING.md) para el flujo AWS-STS.
+
+**Snapshot + deltas.** Al conectar con uno o más prefijos, entrypushd emite primero
+el estado actual (snapshot vía `ENTRYPUSHD_NBOX_URL`) y luego streamea los cambios
+en vivo, sin gap.
+
+**Entrega cifrada HPKE (vault `passbox/*`).** Para entries vault, el valor real se
+entrega **HPKE-sellado** (RFC 9180, X25519 / HKDF-SHA256 / AES-256-GCM) a la clave
+pública X25519 **efímera** que el agente presenta en la metadata del `Watch`
+(`x-vault-pubkey`, `x-vault-instance-nonce`). El plaintext existe solo
+transitoriamente en RAM de entrypushd durante el sellado — nunca se loguea ni
+persiste. Sin pubkey presentada, los valores vault llegan enmascarados (`*****`).
+
+Ejemplos de cliente (Python, Go, Node.js, grpcurl):
+[`examples/grpc-client/`](./examples/grpc-client/).
 
 ## TODO
 - [ ] Editar los roles desde una UI

@@ -5,6 +5,11 @@
       "permissions": ["public:health"]
     },
 
+    "authenticated": {
+      "description": "Implicit pseudo-role injected by policy.rego for every authenticated caller - never assign it to users",
+      "permissions": ["platform:read:metadata"]
+    },
+
     "viewer": {
       "description": "Read-only access to non-production resources",
       "permissions": [
@@ -21,19 +26,23 @@
       "permissions": [
         "entries:read:key",
         "entries:read:prefix",
-        "entries:read:export"
+        "entries:read:export",
+        "entries:read:lookup"
       ]
     },
 
     "editor": {
       "description": "Can read and write entries and templates",
       "permissions": [
+        "templates:read",
         "templates:write",
         "templates:read:build",
         "templates:read:vars",
         "entries:write",
         "entries:read:key",
-        "entries:read:prefix"
+        "entries:read:prefix",
+        "entries:read:lookup",
+        "boxspec:validate"
       ]
     },
 
@@ -48,13 +57,90 @@
     },
 
     "cicd": {
-      "description": "CI/CD automation access",
+      "description": "CI/CD pipeline: read templates and entries, build, CUE validate, bulk lookup, resolve non-vault secret values",
+      "permissions": ["templates:read", "templates:read:build", "templates:read:vars", "boxspec:validate", "entries:read:key", "entries:read:prefix", "entries:read:lookup", "entries:read:export", "secrets:read:value"]
+    },
+
+    "entrypushd": {
+      "description": "Service account for entrypushd binary (snapshot delivery + HPKE vault delivery)",
+      "permissions": ["entries:read:prefix", "entries:read:prefix:leaves", "entries:read:lookup", "secrets:read:value:vault"]
+    },
+
+    "vault_reader": {
+      "description": "Read vault (passbox) index and resolve its secret values — human counterpart of entrypushd's vault access",
+      "permissions": [
+        "entries:read:prefix:vault",
+        "entries:read:key:vault",
+        "secrets:read:value:vault",
+        "tracking:read:vault"
+      ]
+    },
+
+    "vault_operator": {
+      "description": "vault_reader + write entries (body-based: write scope is all prefixes until body-aware authz lands; passbox writes are forced secure by prefix-config)",
+      "permissions": [
+        "entries:read:prefix:vault",
+        "entries:read:key:vault",
+        "secrets:read:value:vault",
+        "tracking:read:vault",
+        "entries:write"
+      ]
+    },
+
+    "template_editor_nonprod": {
+      "description": "Read all templates; create/update only in non-production stages (path-scoped); validate against CUE specs",
       "permissions": [
         "templates:read",
+        "templates:write:non_production",
         "templates:read:build",
-        "entries:read:key",
-        "entries:read:prefix"
+        "templates:read:vars",
+        "boxspec:validate"
       ]
+    },
+
+    "secrets_reader_nonprod": {
+      "description": "Resolve plaintext secret values for every root except beta/production/dr (development/qa/sandbox/global)",
+      "permissions": ["secrets:read:value:non_production"]
+    },
+
+    "templates_publisher": {
+      "description": "Full template operations: read, write (any stage), build, vars, CUE validate",
+      "permissions": ["templates:read", "templates:write", "templates:read:build", "templates:read:vars", "boxspec:validate"]
+    },
+
+    "templates_publisher_nonprod": {
+      "description": "Read all templates; write only non-production stages; build, vars, CUE validate",
+      "permissions": ["templates:read", "templates:write:non_production", "templates:read:build", "templates:read:vars", "boxspec:validate"]
+    },
+
+    "templates_viewer": {
+      "description": "Read-only templates (list, detail, build output, vars)",
+      "permissions": ["templates:read", "templates:read:build", "templates:read:vars"]
+    },
+
+    "entries_editor": {
+      "description": "Create/update and read entries one level at a time (no leaves, no lookup)",
+      "permissions": ["entries:write", "entries:read:key", "entries:read:prefix"]
+    },
+
+    "entries_reader": {
+      "description": "Read all entry index records: by key, prefix (one level), bulk lookup, export (no plaintext, no leaves)",
+      "permissions": ["entries:read:key", "entries:read:prefix", "entries:read:lookup", "entries:read:export"]
+    },
+
+    "entries_reader_nonprod": {
+      "description": "Read entry index records only for development/qa/sandbox/global, plus change history",
+      "permissions": ["entries:read:key:non_production", "entries:read:prefix:non_production", "tracking:read"]
+    },
+
+    "entries_maintainer": {
+      "description": "Delete entries (and their subtree)",
+      "permissions": ["entries:delete"]
+    },
+
+    "security_auditor": {
+      "description": "Read EVERYTHING (templates, entries, non-vault and vault plaintext, history) — zero writes: an auditor observes",
+      "permissions": ["templates:read", "templates:read:build", "templates:read:vars", "entries:read:key", "entries:read:prefix", "entries:read:lookup", "entries:read:export", "secrets:read:value", "entries:read:key:vault", "entries:read:prefix:vault", "secrets:read:value:vault", "tracking:read", "tracking:read:vault"]
     },
 
     "admin": {

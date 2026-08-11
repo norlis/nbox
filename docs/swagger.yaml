@@ -1,47 +1,41 @@
 basePath: /
 definitions:
-  internal_entrypoints_api_auth.TokenRequest:
+  internal_auth.TokenRequest:
     properties:
       password:
         type: string
       username:
         type: string
     type: object
-  internal_entrypoints_api_handlers.CommandBox:
-    properties:
-      id:
-        example: "123"
-        type: string
-      payload:
-        $ref: '#/definitions/nbox_internal_domain_models.Box'
-    type: object
-  nbox_internal_domain_models.Box:
+  internal_box.Box:
     properties:
       service:
         type: string
       stage:
         additionalProperties:
-          $ref: '#/definitions/nbox_internal_domain_models.Stage'
+          $ref: '#/definitions/internal_box.Stage'
         type: object
     type: object
-  nbox_internal_domain_models.Entry:
+  internal_box.Command-internal_box_Box:
     properties:
-      key:
-        example: development/service/var-example
+      command:
         type: string
-      secure:
-        example: false
-        type: boolean
-      value:
-        example: value 123
+      payload:
+        $ref: '#/definitions/internal_box.Box'
+    type: object
+  internal_box.Input:
+    properties:
+      content:
         type: string
     type: object
-  nbox_internal_domain_models.Stage:
+  internal_box.Stage:
     properties:
+      metadata:
+        $ref: '#/definitions/internal_box.TemplateMetadata'
       template:
-        $ref: '#/definitions/nbox_internal_domain_models.Template'
+        $ref: '#/definitions/internal_box.Template'
     type: object
-  nbox_internal_domain_models.Template:
+  internal_box.Template:
     properties:
       name:
         description: s3 path
@@ -49,48 +43,173 @@ definitions:
       value:
         type: string
     type: object
-  nbox_internal_domain_models.Tracking:
+  internal_box.TemplateMetadata:
     properties:
+      hash:
+        type: string
+      updatedAt:
+        type: string
+      updatedBy:
+        type: string
+      version:
+        type: string
+    type: object
+  internal_box.ValidateInput:
+    properties:
+      content:
+        type: string
+      filename:
+        type: string
+    type: object
+  internal_entry.Entry:
+    properties:
+      key:
+        example: development/service/var-example
+        type: string
+      metadata:
+        $ref: '#/definitions/internal_entry.Metadata'
+      secure:
+        example: false
+        type: boolean
+      value:
+        example: value 123
+        type: string
+    type: object
+  internal_entry.Metadata:
+    properties:
+      fingerprint:
+        type: string
+      storageBackend:
+        $ref: '#/definitions/nbox_internal_prefix.StorageBackendType'
+      updatedAt:
+        type: string
+      updatedBy:
+        type: string
+      version:
+        type: integer
+    type: object
+  internal_prefix.Config:
+    properties:
+      prefix:
+        description: PK
+        type: string
+      tags:
+        additionalProperties:
+          type: string
+        type: object
+      typeAllowed:
+        items:
+          $ref: '#/definitions/internal_prefix.StorageBackendType'
+        type: array
+      typeDefault:
+        $ref: '#/definitions/internal_prefix.StorageBackendType'
+      typeSecure:
+        $ref: '#/definitions/internal_prefix.StorageBackendType'
+    type: object
+  internal_prefix.StorageBackendType:
+    enum:
+    - dynamodb
+    - parameterstore
+    - parameterstore_secure
+    type: string
+    x-enum-varnames:
+    - BackendDynamoDB
+    - BackendParameterStore
+    - BackendParameterStoreSecure
+  internal_tracking.Record:
+    properties:
+      action:
+        type: string
+      hash:
+        type: string
       key:
         type: string
       secure:
         type: boolean
+      storageBackend:
+        $ref: '#/definitions/nbox_internal_prefix.StorageBackendType'
       updatedAt:
         type: string
       updatedBy:
         type: string
       value:
         type: string
+      version:
+        type: integer
     type: object
-  problem.ProblemDetail:
+  nbox_internal_box_store_spec.SpecDefinition:
+    properties:
+      id:
+        description: Unique identifier (e.g., "aws:ecs:task-def-v1")
+        type: string
+      matchPatterns:
+        description: Glob patterns (e.g., "taskdef*.json")
+        items:
+          type: string
+        type: array
+      name:
+        description: Human-readable name
+        type: string
+      version:
+        description: Schema version
+        type: string
+    type: object
+  nbox_internal_box_store_spec.ValidationError:
+    properties:
+      message:
+        type: string
+      path:
+        description: e.g., "containerDefinitions.0.memory"
+        type: string
+    type: object
+  nbox_internal_box_store_spec.ValidationResult:
+    properties:
+      errors:
+        items:
+          $ref: '#/definitions/nbox_internal_box_store_spec.ValidationError'
+        type: array
+      spec:
+        $ref: '#/definitions/nbox_internal_box_store_spec.SpecDefinition'
+      valid:
+        type: boolean
+    type: object
+  nbox_internal_prefix.StorageBackendType:
+    enum:
+    - dynamodb
+    - parameterstore
+    - parameterstore_secure
+    type: string
+    x-enum-varnames:
+    - BackendDynamoDB
+    - BackendParameterStore
+    - BackendParameterStoreSecure
+  problem.Detail:
     properties:
       detail:
-        description: Detail es una explicación legible y específica de esta ocurrencia
-          del problema.
+        description: Detail is a human-readable explanation specific to this occurrence.
         type: string
       instance:
-        description: Instance es un URI que identifica la ocurrencia específica del
-          problema.
+        description: Instance is a URI identifying the specific occurrence of the
+          problem.
         type: string
       requestId:
-        type: string
-      stackTrace:
+        description: RequestID correlates the problem to a specific request.
         type: string
       status:
-        description: Status es el código de estado HTTP reflejado para esta ocurrencia
-          del problema.
+        description: Status is the HTTP status code for this occurrence.
         type: integer
       timestamp:
+        description: Timestamp records when the problem was created.
         type: string
       title:
         description: |-
-          Title es un resumen corto y legible del tipo de problema.
-          No debería cambiar entre distintas ocurrencias del mismo problema.
+          Title is a short, human-readable summary of the problem type.
+          Should not change across occurrences of the same problem.
         type: string
       type:
         description: |-
-          Type es un URI que identifica el tipo de problema.
-          Se recomienda que provea documentación legible para los desarrolladores.
+          Type is a URI identifying the problem type. Should provide
+          developer-readable documentation.
         type: string
     type: object
 info:
@@ -101,7 +220,7 @@ info:
   description: Esta es una API generada automáticamente con Swaggo.
   termsOfService: http://swagger.io/terms/
   title: nbox API
-  version: "1.0"
+  version: "2.0"
 paths:
   /api/auth/token:
     post:
@@ -114,7 +233,7 @@ paths:
         name: data
         required: true
         schema:
-          $ref: '#/definitions/internal_entrypoints_api_auth.TokenRequest'
+          $ref: '#/definitions/internal_auth.TokenRequest'
       produces:
       - application/json
       responses:
@@ -128,11 +247,11 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       summary: Token
       tags:
       - auth
@@ -148,20 +267,20 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/nbox_internal_domain_models.Box'
+              $ref: '#/definitions/internal_box.Box'
             type: array
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
@@ -171,14 +290,16 @@ paths:
     post:
       consumes:
       - application/json
-      description: insert or update templates on s3
+      deprecated: true
+      description: 'Deprecated: use POST /api/box/{service}/{stage}/{template}. Removed
+        from templates:write (admin only) to discourage use.'
       parameters:
       - description: Upsert template
         in: body
         name: data
         required: true
         schema:
-          $ref: '#/definitions/internal_entrypoints_api_handlers.CommandBox'
+          $ref: '#/definitions/internal_box.Command-internal_box_Box'
       produces:
       - application/json
       responses:
@@ -191,19 +312,54 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
-      summary: Upsert templates
+      summary: Upsert templates (deprecated)
+      tags:
+      - templates
+  /api/box/{service}/{stage}:
+    get:
+      description: show metadata & template names
+      parameters:
+      - description: service name
+        in: path
+        name: service
+        required: true
+        type: string
+      - description: stage
+        in: path
+        name: stage
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_box.Stage'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Detail'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: Stage detail
       tags:
       - templates
   /api/box/{service}/{stage}/{template}:
@@ -235,11 +391,11 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
@@ -273,21 +429,74 @@ paths:
           description: OK
           schema:
             properties:
-              exit:
+              exist:
                 type: boolean
             type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
       summary: Exist template
+      tags:
+      - templates
+    post:
+      consumes:
+      - application/json
+      description: insert or update a specific template on s3
+      parameters:
+      - description: service name
+        in: path
+        name: service
+        required: true
+        type: string
+      - description: stage name
+        in: path
+        name: stage
+        required: true
+        type: string
+      - description: template name
+        in: path
+        name: template
+        required: true
+        type: string
+      - description: Template content (Base64 encoded)
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/internal_box.Input'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of updated paths
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/problem.Detail'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Detail'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: Upsert template
       tags:
       - templates
   /api/box/{service}/{stage}/{template}/build:
@@ -319,11 +528,11 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
@@ -361,15 +570,153 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
       summary: List vars template
+      tags:
+      - templates
+  /api/box/schemas:
+    get:
+      description: Get the list of supported storage backends
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of schema types (e.g. json, txt)
+          schema:
+            items:
+              type: string
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: List Available Schema Types
+      tags:
+      - templates
+  /api/boxspec/reload:
+    post:
+      description: Hot-reload specs from filesystem without restart
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: count of loaded specs
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Detail'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: Reload validation specs
+      tags:
+      - boxspec
+  /api/boxspec/resolve:
+    get:
+      description: Given a filename pattern, resolves the matching spec and returns
+        its JSON Schema representation
+      parameters:
+      - description: Filename pattern to match (e.g., task-definition.json)
+        in: query
+        name: pattern
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: JSON Schema
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Missing pattern parameter
+          schema:
+            $ref: '#/definitions/problem.Detail'
+        "404":
+          description: No matching spec found
+          schema:
+            $ref: '#/definitions/problem.Detail'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: Resolve spec and export as JSON Schema
+      tags:
+      - boxspec
+  /api/boxspec/specs:
+    get:
+      description: Get list of schemas available for template validation
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              items:
+                $ref: '#/definitions/nbox_internal_box_store_spec.SpecDefinition'
+              type: array
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Detail'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: List available validation specs
+      tags:
+      - boxspec
+  /api/boxspec/validate:
+    post:
+      consumes:
+      - application/json
+      description: Check if a template complies with defined specs without saving
+      parameters:
+      - description: Template data
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/internal_box.ValidateInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/nbox_internal_box_store_spec.ValidationResult'
+        "400":
+          description: Validation Failed
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      summary: Validate template
       tags:
       - templates
   /api/entry:
@@ -384,7 +731,7 @@ paths:
         required: true
         schema:
           items:
-            $ref: '#/definitions/nbox_internal_domain_models.Entry'
+            $ref: '#/definitions/internal_entry.Entry'
           type: array
       produces:
       - application/json
@@ -398,15 +745,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
@@ -416,7 +763,7 @@ paths:
   /api/entry/export:
     get:
       description: |-
-        Export entries in different formats (JSON, YAML, dotenv, ECS tack definition) for backup or migration purposes
+        Export entries in different formats (JSON, YAML, dotenv, ECS task definition) for backup or migration purposes
         Requires authentication via Bearer token
       parameters:
       - description: 'Prefix to filter entries (required). Example: ''production/'',
@@ -457,23 +804,23 @@ paths:
         "400":
           description: Invalid parameters (missing prefix or invalid format)
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "401":
           description: Unauthorized - Missing or invalid token
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "403":
           description: Forbidden - Insufficient permissions
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "404":
           description: No entries found with specified prefix
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal server error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
@@ -502,11 +849,11 @@ paths:
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
@@ -527,19 +874,56 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/nbox_internal_domain_models.Entry'
+            $ref: '#/definitions/internal_entry.Entry'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
       summary: Retrieve key
+      tags:
+      - entry
+  /api/entry/lookup:
+    post:
+      consumes:
+      - application/json
+      description: Retrieve values and metadata for a list of keys in a single request.
+      parameters:
+      - description: List of keys to retrieve
+        in: body
+        name: request
+        required: true
+        schema:
+          items:
+            type: string
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/internal_entry.Entry'
+            type: object
+        "400":
+          description: Invalid request body
+          schema:
+            $ref: '#/definitions/problem.Detail'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: Retrieve multiple entries
       tags:
       - entry
   /api/entry/prefix:
@@ -551,6 +935,11 @@ paths:
         name: v
         required: true
         type: string
+      - description: every real key under the prefix, flat (no folder markers / empty
+          values)
+        in: query
+        name: leaves
+        type: boolean
       produces:
       - application/json
       responses:
@@ -558,23 +947,23 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/nbox_internal_domain_models.Entry'
+              $ref: '#/definitions/internal_entry.Entry'
             type: array
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
       summary: Filter by prefix
       tags:
       - entry
-  /api/entry/secret-value:
+  /api/entry/resolve:
     get:
       description: plain value
       parameters:
@@ -589,30 +978,99 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/nbox_internal_domain_models.Entry'
+            $ref: '#/definitions/internal_entry.Entry'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "404":
           description: Not found
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
-      summary: Retrieve secret value
+      summary: Resolve value
       tags:
       - entry
-  /api/track/key:
+  /api/me/permissions:
     get:
-      description: history changes
+      description: Returns the permission names and resource patterns granted to the
+        authenticated caller's roles (UI hints, not a security boundary).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Detail'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BearerAuth: []
+      summary: Current caller capabilities
+      tags:
+      - me
+  /api/prefix:
+    get:
+      description: Get the list of configurations
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of prefix config
+          schema:
+            items:
+              $ref: '#/definitions/internal_prefix.Config'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: List Available configs
+      tags:
+      - prefix-config
+  /api/prefix/backends:
+    get:
+      description: Get the list of supported storage backends
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of backend types (e.g. dynamodb, parameterstore)
+          schema:
+            items:
+              type: string
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: List Available Backend Types
+      tags:
+      - prefix-config
+  /api/prefix/resolve:
+    get:
+      description: plain value
       parameters:
-      - description: key path
+      - description: prefix path
         in: query
         name: v
         required: true
@@ -623,23 +1081,87 @@ paths:
         "200":
           description: OK
           schema:
+            $ref: '#/definitions/internal_prefix.Config'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Detail'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/problem.Detail'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: Prefix config
+      tags:
+      - prefix-config
+  /api/static/stages:
+    get:
+      description: Returns the list of available stages
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
             items:
-              $ref: '#/definitions/nbox_internal_domain_models.Tracking'
+              type: string
             type: array
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
+      security:
+      - BasicAuth: []
+      - BearerAuth: []
+      summary: List available stages
+      tags:
+      - static
+  /api/track/key:
+    get:
+      description: history changes
+      parameters:
+      - description: key path
+        in: query
+        name: v
+        required: true
+        type: string
+      - description: 'Start time. Supports: 30m, 2h, 1.5d, 2w, 1M or ISO-8601'
+        in: query
+        name: from
+        type: string
+      - description: 'End time. Supports: 30m, 2h, 1.5d, 2w, 1M or ISO-8601'
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_tracking.Record'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/problem.Detail'
         "500":
           description: Internal error
           schema:
-            $ref: '#/definitions/problem.ProblemDetail'
+            $ref: '#/definitions/problem.Detail'
       security:
       - BasicAuth: []
       - BearerAuth: []
       summary: History
       tags:
-      - entry
+      - Tracking
 securityDefinitions:
   BasicAuth:
     type: basic

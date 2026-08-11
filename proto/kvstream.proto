@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package stream.v1;
+option go_package = "nbox/gen/stream/v1;streamv1";
+
+// KVStream streams entry change events in real time.
+service KVStream {
+  // Server-streaming. Filters: AND between prefixes and types, OR within
+  // each list, empty = match all.
+  rpc Watch(WatchRequest) returns (stream Event);
+}
+
+message WatchRequest {
+  // Subject prefixes (HasPrefix). Empty = all. e.g. ["development/", "passbox/banking/"]
+  repeated string prefixes = 1;
+
+  // Type patterns: exact or "*" suffix. Empty = all. e.g. ["nbox.entry.*"]
+  repeated string types = 2;
+}
+
+message Event {
+  string id = 1;                      // CloudEvent ID
+  string type = 2;                    // e.g. "nbox.entry.upserted"
+  string source = 3;                  // "nbox"
+  string subject = 4;                 // entry key (full path)
+  int64 time_unix_ms = 5;
+  bytes data = 6;                     // JSON payload, or HPKE ciphertext for vault
+  map<string, string> extensions = 7; // prefix, username, encrypted, ...
+}

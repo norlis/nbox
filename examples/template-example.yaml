@@ -1,0 +1,9 @@
+vars:
+  TEMPLATE: "template de ejemplo"
+  EXAMPLE_VAR001:  "{{ global/example/var001 }}"
+  EXAMPLE_VAR_ULTRA_SECRET: "{{ global/example/var-ultra-secret }}"
+  EXAMPLE_VAR_ULTRA_SECRET2: "{{ global/example/var-ultra-secret2 }}"
+  PARAMETER_STORE_URL_EXAMPLE: "{{ development/serverless/url-example }}"
+  NAME: "{{ development/example/name }}"
+  PASSBOX_TEST: "{{ passbox/vault-1 }}"
+  MISSING_TEST: "{{ development/missing }}"

@@ -1,0 +1,19 @@
+# Regal configuration for nbox Rego policies.
+# https://docs.styra.com/regal
+rules:
+  imports:
+    # data.roles / data.permissions / data.whitelist are external JSON data
+    # documents (roles.json, permissions.json, whitelist.json) loaded at
+    # evaluation time, and the test suite mocks them via `with data.X as {...}`.
+    # Regal resolves references statically and cannot see these, so the rule
+    # produces only false positives for this data-driven policy. Disabled.
+    unresolved-reference:
+      level: ignore
+  style:
+    # Policy test cases embed full input/data fixtures inline for readability;
+    # wrapping them hurts more than it helps. Keep line-length enforced on real
+    # policy files, but exempt the test files.
+    line-length:
+      ignore:
+        files:
+          - "**/*_test.rego"

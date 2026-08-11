@@ -1,0 +1,13 @@
+# SAM build artifacts
+.aws-sam/
+
+# CloudFormation outputs
+packaged.yaml
+packaged-template.yaml
+
+# Parameters with secrets (if any)
+parameters-*.override.json
+
+# Local testing
+.env
+.env.local

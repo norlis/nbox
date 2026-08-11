@@ -9,12 +9,14 @@ GIT_SHA := $(shell git rev-parse --short HEAD)
 DATE := $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
 
 LDFLAGS := -ldflags "-s -w \
-	-X $(APP_IMPORT_PATH)/internal/application.GitHash=$(GIT_SHA) \
-	-X $(APP_IMPORT_PATH)/internal/application.Date=$(DATE)"
+	-X $(APP_IMPORT_PATH)/internal/version.GitHash=$(GIT_SHA) \
+	-X $(APP_IMPORT_PATH)/internal/version.Date=$(DATE)"
 
 # --- Herramientas y Módulos ---
 TOOLS_BIN_DIR := $(abspath ./bin)
 TOOLS_MOD_DIR := $(abspath ./tools)
+
+export PATH := $(TOOLS_BIN_DIR):$(PATH)
 
 # --- Comandos Base ---
 GOBUILD := GO111MODULE=on CGO_ENABLED=0 go build -trimpath
@@ -29,8 +31,9 @@ help:
 	@echo ""
 	@echo "## --- Ciclo de Vida del Build ---"
 	@echo "  build            Construye los binarios para todas las plataformas."
-	@echo "  amd64-build      Construye el binario para linux/amd64."
-	@echo "  arm64-build      Construye el binario para linux/arm64."
+	@echo "  <arch>-build             Compila los 3 binarios para <arch> (amd64|arm64); GOOS autodetectado."
+	@echo "  <arch>-build-nbox        Compila microservice + cli para <arch> (amd64|arm64)."
+	@echo "  <arch>-build-entrypushd  Compila entrypushd para <arch> (amd64|arm64)."
 	@echo "  clean            Elimina la carpeta de build."
 	@echo ""
 	@echo "## --- Calidad de Código ---"
@@ -52,52 +55,45 @@ all: check-format lint test build
 ## ----------------------------------------
 ## Gestión de Herramientas
 ## ----------------------------------------
-tools:
-	@echo "==> Instalando herramientas de desarrollo en $(TOOLS_BIN_DIR)..."
-	@# Nos aseguramos de que el directorio de binarios exista
+tools: $(TOOLS_BIN_DIR)
+
+$(TOOLS_BIN_DIR): $(TOOLS_MOD_DIR)/tools.go $(TOOLS_MOD_DIR)/go.mod
+	@echo "==> Instalando herramientas desde tools/go.mod..."
 	@mkdir -p $(TOOLS_BIN_DIR)
-	@# Usamos el go.mod de ./tools para no ensuciar el go.mod principal
 	@cd $(TOOLS_MOD_DIR) && go mod tidy
-	@# Obtenemos la lista de paquetes y la instalamos con un bucle for, que es más robusto
+	# Usamos go list para obtener las herramientas de forma robusta
 	@cd $(TOOLS_MOD_DIR) && \
-		for pkg in $$(cat tools.go | grep '_' | awk -F'"' '{print $$2}'); do \
-			echo "Instalando $$pkg..."; \
-			GOBIN=$(TOOLS_BIN_DIR) go install -v $$pkg; \
-		done
-	@echo "==> Herramientas instaladas correctamente."
+		go list -e -f '{{range .Imports}}{{.}} {{end}}' -tags=tools tools.go | \
+		xargs -n1 env GOBIN=$(TOOLS_BIN_DIR) go install -v
+	@touch $(TOOLS_BIN_DIR)
+	@echo "==> Herramientas actualizadas."
+
+.PHONY: tools-force
+tools-force:
+	@rm -rf $(TOOLS_BIN_DIR)
+	@$(MAKE) tools
 
 
 ## ----------------------------------------
 ## Calidad de Código
 ## ----------------------------------------
-lint: tools lint-static-check
+lint: tools
 	@echo "==> Ejecutando golangci-lint..."
-	@$(TOOLS_BIN_DIR)/golangci-lint run --timeout 5m --enable gosec
+	@$(TOOLS_BIN_DIR)/golangci-lint run --fix
 
-lint-static-check: tools
-	@echo "==> Ejecutando staticcheck..."
-	@STATIC_CHECK_OUT=`$(TOOLS_BIN_DIR)/staticcheck $(ALL_PKGS) 2>&1`; \
-	if [ "$$STATIC_CHECK_OUT" ]; then \
-		echo "ERROR: Falló staticcheck:\n"; \
-		echo "\033[0;31m$$STATIC_CHECK_OUT\033[0m\n"; \
-		exit 1; \
-	else \
-		echo "SUCCESS: Staticcheck finalizado correctamente."; \
-	fi
+vulncheck: tools
+	@echo "==> Escaneando vulnerabilidades (govulncheck)..."
+	@$(TOOLS_BIN_DIR)/govulncheck ./...
 
 format: tools
 	@echo "==> Formateando código..."
-	@$(TOOLS_BIN_DIR)/goimports -w .
+	@$(TOOLS_BIN_DIR)/gofumpt -l -w .
 
 check-format: tools
-	@echo "==> Verificando formato del código..."
-	@WARNINGS_CHECK_OUT=`$(TOOLS_BIN_DIR)/goimports -l .`; \
-	if [ "$$WARNINGS_CHECK_OUT" ]; then \
-		echo "ERROR: El código no está formateado. Ejecuta 'make format'.\n"; \
-		echo "\033[0;31m$$WARNINGS_CHECK_OUT\033[0m\n"; \
+	@echo "==> Verificando formato..."
+	@if [ -n "$$($(TOOLS_BIN_DIR)/gofumpt -l .)" ]; then \
+		echo "ERROR: El código no está formateado con gofumpt."; \
 		exit 1; \
-	else \
-		echo "SUCCESS: El formato del código es correcto."; \
 	fi
 
 
@@ -107,6 +103,7 @@ check-format: tools
 test:
 	@echo "==> Ejecutando pruebas unitarias..."
 	@go test ./... --cover
+	@#go test -race ./...  --cover
 
 test-sonar:
 	@echo "==> Generando reportes para SonarQube..."
@@ -122,19 +119,37 @@ run-local-sonar:
 ## ----------------------------------------
 build: clean
 	@echo "==> Construyendo binarios..."
-	GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/amd64/microservice ./cmd/nbox
-	GOOS=darwin GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/arm64/microservice ./cmd/nbox
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/microservice ./cmd/nbox
-	GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/microservice ./cmd/nbox
+	GOOS=darwin  GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/amd64/microservice ./cmd/nbox
+	GOOS=darwin  GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/amd64/entrypushd  ./cmd/entrypushd
+	GOOS=darwin  GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/amd64/cli    ./cmd/cli
+	GOOS=darwin  GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/arm64/microservice ./cmd/nbox
+	GOOS=darwin  GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/arm64/entrypushd  ./cmd/entrypushd
+	GOOS=darwin  GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/darwin/arm64/cli    ./cmd/cli
+	GOOS=linux   GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/microservice  ./cmd/nbox
+	GOOS=linux   GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/entrypushd   ./cmd/entrypushd
+	GOOS=linux   GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/cli     ./cmd/cli
+	GOOS=linux   GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/microservice  ./cmd/nbox
+	GOOS=linux   GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/entrypushd   ./cmd/entrypushd
+	GOOS=linux   GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/cli     ./cmd/cli
 	GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/windows/amd64/microservice ./cmd/nbox
+	GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/windows/amd64/cli     ./cmd/cli
 
-amd64-build:
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/microservice ./cmd/nbox
-	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/amd64/hasher ./cmd/hasher
+# OS destino: autodetecta el del host (darwin en Mac, linux en el contenedor de build).
+# Override para cross-compile: GOOS=linux make arm64-build
+GOOS ?= $(shell go env GOOS)
 
-arm64-build:
-	GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/microservice ./cmd/nbox
-	GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o ./build/linux/arm64/hasher ./cmd/hasher
+# make <arch>-build-nbox        → microservice + cli
+# make <arch>-build-entrypushd  → entrypushd
+%-build-nbox:
+	GOOS=$(GOOS) GOARCH=$* $(GOBUILD) $(LDFLAGS) -o ./build/$(GOOS)/$*/microservice ./cmd/nbox
+	GOOS=$(GOOS) GOARCH=$* $(GOBUILD) $(LDFLAGS) -o ./build/$(GOOS)/$*/cli          ./cmd/cli
+
+%-build-entrypushd:
+	GOOS=$(GOOS) GOARCH=$* $(GOBUILD) $(LDFLAGS) -o ./build/$(GOOS)/$*/entrypushd   ./cmd/entrypushd
+
+# make <arch>-build             → microservice + cli + entrypushd
+%-build: %-build-nbox %-build-entrypushd
+	@:
 
 clean:
 	@echo "==> Limpiando builds anteriores..."
@@ -156,4 +171,19 @@ mod-vendor:
 ## ----------------------------------------
 .PHONY: docs
 docs:
-	$(TOOLS_BIN_DIR)/swag init -g internal/entrypoints/httpapi/api.go --parseDependency
+	$(TOOLS_BIN_DIR)/swag init -g internal/transport/http/server.go --parseDependency
+
+
+## ----------------------------------------
+## Proto codegen
+## ----------------------------------------
+.PHONY: proto-gen
+proto-gen:
+	@echo "==> Generando código gRPC desde proto..."
+	@protoc \
+	  --go_out=. \
+	  --go_opt=module=nbox \
+	  --go-grpc_out=. \
+	  --go-grpc_opt=module=nbox \
+	  proto/kvstream.proto
+	@echo "==> Generado en gen/stream/v1/"

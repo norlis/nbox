@@ -1,0 +1,62 @@
+version: 0.1
+
+tags: &tags project=nbox
+  createdBy=nviamonte
+  owner=nviamonte
+  managedBy=SAM
+  AppManagerCFNStackKey=nbox
+
+global: &global
+  parameters:
+    stack_name: nbox
+    confirm_changeset: false
+    region: us-east-1
+    tags: *tags
+    resolve_s3: true
+    capabilities: "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND CAPABILITY_NAMED_IAM"
+    s3_prefix: "nbox"
+    on_failure: DELETE
+  build:
+    parameters:
+      cached: true
+      parallel: true
+
+local:
+  global: *global
+
+  build:
+    parameters:
+      parameter_overrides:
+        - Environment=local
+
+  local_invoke:
+    parameters:
+      parameter_overrides:
+        - Environment=local
+        - TracingEnabled=false
+
+
+development:
+  global: *global
+
+  deploy:
+    parameters:
+      tags: !join [*tags, environment=development]
+      parameter_overrides:
+        - Environment=development
+        - Prefix=nbox
+
+
+production:
+  global: *global
+
+  deploy:
+    parameters:
+      tags: !join [*tags, environment=production]
+      parameter_overrides:
+        - Environment=production
+        - Prefix=nbox
+        - CreateEntriesTable=false
+        - CreateTrackingEntriesTable=false
+        - CreateBoxTable=false
+        - CreateBoxBucket=false
