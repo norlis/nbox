@@ -1,3 +1,20 @@
+### status
+GET {{baseUrl}}/status
+Content-Type: application/json
+
+### live
+GET {{baseUrl}}/live
+Content-Type: application/json
+
+### ready
+GET {{baseUrl}}/ready
+Content-Type: application/json
+
+### health
+GET {{baseUrl}}/health
+Content-Type: application/json
+
+
 ### token
 POST {{baseUrl}}/api/auth/token
 Content-Type: application/json
@@ -88,7 +105,8 @@ Content-Type: application/json
 
 
 ### build template
-GET {{baseUrl}}/api/box/example-yaml/development/template-example.yaml/build
+#GET {{baseUrl}}/api/box/example-yaml/development/template-example.yaml/build
+GET {{baseUrl}}/api/box/demos/beta/task_definition.json/build?image-name=825421293478.dkr.ecr.us-west-2.amazonaws.com/demos:master-e8ef047c51bb601f1f16fb79aed7cf5b52ef57f9-17-1
 #GET {{baseUrl}}/api/box/example-yaml/development/template-example.yaml/build?strict
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -120,7 +138,7 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 
 [
-  {"key": "passbox/av2/account-pepe", "value": "ojala funcione esto 3.1"}
+  {"key": "passbox/av2/account-pepe", "value": "usando nats ok 2.3"}
 ]
 
 
@@ -159,7 +177,7 @@ Content-Type: application/json
 
 
 ### retrieve secret value
-GET {{baseUrl}}/api/entry/resolve?v=passbox/vault-1
+GET {{baseUrl}}/api/entry/resolve?v=global/github-actions/github-npm-auth-token
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
@@ -170,18 +188,21 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 
 [
-  "global/example/var001",
-  "global/example/var-ultra-secret",
-  "global/example/var-ultra-secret2",
-  "development/serverless/url-example",
-  "development/example/name",
-  "passbox/vault-1"
+  "production/prometeo/access_token_coinag_api_ar",
+  "production/prometeo/alfin_client_id",
+  "production/prometeo/alfin_client_secret"
 ]
 
 
 
 ### Get prefix
 GET {{baseUrl}}/api/entry/prefix?v=/
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+
+### Get prefix clean
+GET {{baseUrl}}/api/entry/prefix?v=beta/&leaves
 Content-Type: application/json
 Authorization: Bearer {{token}}
 
@@ -204,7 +225,7 @@ Content-Type: application/json
 Authorization: Bearer {{token}}
 
 ### Delete key
-DELETE {{baseUrl}}/api/entry/key?v=widget-x/development3
+DELETE {{baseUrl}}/api/entry/key?v=developmentexample/
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
@@ -225,7 +246,7 @@ Content-Type: application/json
 
 
 ### Resolve Prefix config
-GET {{baseUrl}}/api/prefix/resolve?v=development/serverless
+GET {{baseUrl}}/api/prefix/resolve?v=production/nats
 Authorization: Bearer {{token}}
 Content-Type: application/json
 

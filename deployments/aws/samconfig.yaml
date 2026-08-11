@@ -36,8 +36,6 @@ local:
         - TracingEnabled=false
 
 
-
-
 development:
   global: *global
 
@@ -46,4 +44,19 @@ development:
       tags: !join [*tags, environment=development]
       parameter_overrides:
         - Environment=development
-        - Prefix=prometeoapi-nbox
+        - Prefix=nbox
+
+
+production:
+  global: *global
+
+  deploy:
+    parameters:
+      tags: !join [*tags, environment=production]
+      parameter_overrides:
+        - Environment=production
+        - Prefix=nbox
+        - CreateEntriesTable=false
+        - CreateTrackingEntriesTable=false
+        - CreateBoxTable=false
+        - CreateBoxBucket=false

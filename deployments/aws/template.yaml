@@ -20,9 +20,37 @@ Parameters:
       - production
     Description: Environment name.
 
+  CreateEntriesTable:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Whether to create the entries DynamoDB table.
+
+  CreateTrackingEntriesTable:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Whether to create the tracking-entries DynamoDB table.
+
+  CreateBoxTable:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Whether to create the box DynamoDB table.
+
+  CreateBoxBucket:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Whether to create the box S3 bucket.
+
 
 Conditions:
   IsProduction: !Equals [!Ref Environment, "production"]
+  ShouldCreateEntriesTable: !Equals [!Ref CreateEntriesTable, "true"]
+  ShouldCreateTrackingEntriesTable: !Equals [!Ref CreateTrackingEntriesTable, "true"]
+  ShouldCreateBoxTable: !Equals [!Ref CreateBoxTable, "true"]
+  ShouldCreateBoxBucket: !Equals [!Ref CreateBoxBucket, "true"]
 
 
 Resources:
@@ -30,6 +58,7 @@ Resources:
 
   EntriesTable:
     Type: AWS::DynamoDB::GlobalTable
+    Condition: ShouldCreateEntriesTable
     UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     DeletionPolicy: !If [IsProduction, Retain, Delete]
     Properties:
@@ -58,6 +87,7 @@ Resources:
 
   TrackingEntriesTable:
     Type: AWS::DynamoDB::GlobalTable
+    Condition: ShouldCreateTrackingEntriesTable
     UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     DeletionPolicy: !If [IsProduction, Retain, Delete]
     Properties:
@@ -89,6 +119,7 @@ Resources:
 
   BoxTable:
     Type: AWS::DynamoDB::GlobalTable
+    Condition: ShouldCreateBoxTable
     UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     DeletionPolicy: !If [IsProduction, Retain, Delete]
     Properties:
@@ -114,33 +145,6 @@ Resources:
               Value: !Ref Prefix
             - Key: environment
               Value: !Ref Environment
-
-
-  PrefixConfigTable:
-    Type: AWS::DynamoDB::GlobalTable
-    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
-    DeletionPolicy: !If [IsProduction, Retain, Delete]
-    Properties:
-      TableName: !Sub "${Prefix}-prefix-config-${Environment}"
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: Prefix
-          AttributeType: S
-      KeySchema:
-        - AttributeName: Prefix
-          KeyType: HASH
-      Replicas:
-        - Region: us-east-1
-          DeletionProtectionEnabled: !If [IsProduction, true, false]
-          PointInTimeRecoverySpecification:
-            PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
-          Tags:
-            - Key: project
-              Value: !Ref Prefix
-            - Key: environment
-              Value: !Ref Environment
-            - Key: version
-              Value: v2
 
 
   ConfigTable:
@@ -178,6 +182,7 @@ Resources:
 
   BoxBucket:
     Type: AWS::S3::Bucket
+    Condition: ShouldCreateBoxBucket
     UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     DeletionPolicy: !If [IsProduction, Retain, Delete]
     Properties:
@@ -243,26 +248,30 @@ Resources:
                   - dynamodb:BatchWriteItem
                   - dynamodb:DescribeTable
                 Resource:
-                  - !GetAtt EntriesTable.Arn
-                  - !GetAtt TrackingEntriesTable.Arn
-                  - !GetAtt BoxTable.Arn
-                  - !GetAtt PrefixConfigTable.Arn
+                  - !If [ShouldCreateEntriesTable, !GetAtt EntriesTable.Arn, !Ref "AWS::NoValue"]
+                  - !If [ShouldCreateTrackingEntriesTable, !GetAtt TrackingEntriesTable.Arn, !Ref "AWS::NoValue"]
+                  - !If [ShouldCreateBoxTable, !GetAtt BoxTable.Arn, !Ref "AWS::NoValue"]
                   - !GetAtt ConfigTable.Arn
-                  - !Sub "${EntriesTable.Arn}/index/*"
-                  - !Sub "${TrackingEntriesTable.Arn}/index/*"
-                  - !Sub "${BoxTable.Arn}/index/*"
-                  - !Sub "${PrefixConfigTable.Arn}/index/*"
+                  - !If [ShouldCreateEntriesTable, !Sub "${EntriesTable.Arn}/index/*", !Ref "AWS::NoValue"]
+                  - !If [ShouldCreateTrackingEntriesTable, !Sub "${TrackingEntriesTable.Arn}/index/*", !Ref "AWS::NoValue"]
+                  - !If [ShouldCreateBoxTable, !Sub "${BoxTable.Arn}/index/*", !Ref "AWS::NoValue"]
                   - !Sub "${ConfigTable.Arn}/index/*"
-              - Sid: S3Objects
-                Effect: Allow
-                Action:
-                  - s3:GetObject
-                  - s3:PutObject
-                Resource: !Sub "${BoxBucket.Arn}/*"
-              - Sid: S3Bucket
-                Effect: Allow
-                Action: s3:ListBucket
-                Resource: !GetAtt BoxBucket.Arn
+              - !If
+                - ShouldCreateBoxBucket
+                - Sid: S3Objects
+                  Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:PutObject
+                  Resource: !Sub "${BoxBucket.Arn}/*"
+                - !Ref "AWS::NoValue"
+              - !If
+                - ShouldCreateBoxBucket
+                - Sid: S3Bucket
+                  Effect: Allow
+                  Action: s3:ListBucket
+                  Resource: !GetAtt BoxBucket.Arn
+                - !Ref "AWS::NoValue"
               - Sid: ParameterStore
                 Effect: Allow
                 Action:
@@ -376,21 +385,107 @@ Resources:
                       - !Sub "ssm.${AWS::Region}.amazonaws.com"
                       - !Sub "secretsmanager.${AWS::Region}.amazonaws.com"
 
+  # =========================================================
+  # NATS + Surveyor monitoring task (deployments/aws/ecs/).
+  # Task role: the ADOT collector ships metrics to CloudWatch (awsemf).
+  # Execution role: ECR pull + inject the NATS $SYS/APP passwords from SSM.
+  # =========================================================
+
+  NatsSurveyorTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Prefix}-nats-surveyor-task-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # awsemf → CloudWatch: logs:CreateLogGroup/Stream, PutLogEvents, cloudwatch:PutMetricData
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/CloudWatchAgentServerPolicy"
+      Tags:
+        - Key: project
+          Value: !Ref Prefix
+        - Key: environment
+          Value: !Ref Environment
+      Policies:
+        - PolicyName: nats-surveyor-task
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # bootstrap container fetches nats-server.conf + otel-config.yaml.
+              - !If
+                - ShouldCreateBoxBucket
+                - Sid: ConfigS3Read
+                  Effect: Allow
+                  Action: s3:GetObject
+                  Resource: !Sub "${BoxBucket.Arn}/nats/*"
+                - !Ref "AWS::NoValue"
+              - Sid: ECSExec
+                Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: "*"
+
+  NatsSurveyorExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Prefix}-nats-surveyor-execution-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Tags:
+        - Key: project
+          Value: !Ref Prefix
+        - Key: environment
+          Value: !Ref Environment
+      Policies:
+        - PolicyName: nats-secrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Inject the NATS $SYS/APP passwords via the task def `secrets` block.
+              - Sid: SSMParams
+                Effect: Allow
+                Action: ssm:GetParameters
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${Environment}/nats/*"
+              - Sid: KMSDecrypt
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService:
+                      - !Sub "ssm.${AWS::Region}.amazonaws.com"
+
 # =========================================================
 # Outputs
 # =========================================================
 Outputs:
   EntriesTableName:
+    Condition: ShouldCreateEntriesTable
     Value: !Ref EntriesTable
   TrackingEntriesTableName:
+    Condition: ShouldCreateTrackingEntriesTable
     Value: !Ref TrackingEntriesTable
   BoxTableName:
+    Condition: ShouldCreateBoxTable
     Value: !Ref BoxTable
-  PrefixConfigTableName:
-    Value: !Ref PrefixConfigTable
   ConfigTableName:
     Value: !Ref ConfigTable
   BucketName:
+    Condition: ShouldCreateBoxBucket
     Value: !Ref BoxBucket
   NboxTaskRoleArn:
     Description: ARN del task role de nbox (taskRoleArn en el task definition)
@@ -401,3 +496,9 @@ Outputs:
   EcsExecutionRoleArn:
     Description: ARN del execution role compartido (executionRoleArn en el task definition)
     Value: !GetAtt EcsExecutionRole.Arn
+  NatsSurveyorTaskRoleArn:
+    Description: ARN del task role de la task nats+surveyor (taskRoleArn)
+    Value: !GetAtt NatsSurveyorTaskRole.Arn
+  NatsSurveyorExecutionRoleArn:
+    Description: ARN del execution role de la task nats+surveyor (executionRoleArn)
+    Value: !GetAtt NatsSurveyorExecutionRole.Arn
