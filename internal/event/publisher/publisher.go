@@ -4,19 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
 	cloudevents "github.com/cloudevents/sdk-go/v2/event"
-	"go.uber.org/zap"
+	evtracing "github.com/norlis/event-driven/pkg/event"
+	logfields2 "github.com/norlis/event-driven/pkg/kit/logfields"
+	"github.com/norlis/httpgate/logging"
+	"github.com/norlis/httpgate/trace"
 	"nbox/internal/event"
+	"nbox/internal/logfields"
 )
 
 // innerPublisher is the contract the Publisher delegates to. Decoupled from
 // the concrete transport so we can test the mapping in isolation.
 type innerPublisher interface {
-	Publish(cloudevents.Event) error
+	Publish(ctx context.Context, ce cloudevents.Event) error
 }
 
 // Publisher converts event.Event values into cloudevents.Event and delegates
@@ -27,7 +32,7 @@ type Publisher struct {
 	maxAttempts    int
 	initialBackoff time.Duration
 	maxBackoff     time.Duration
-	logger         *zap.Logger
+	logger         *slog.Logger
 }
 
 // Publish implements event.Publisher.
@@ -36,15 +41,17 @@ func (p *Publisher) Publish(ctx context.Context, events ...event.Event) error {
 	for _, e := range events {
 		ce, err := p.toCloudEvent(e)
 		if err != nil {
-			p.logger.Error("encode failed, dropping event",
-				zap.String("type", string(e.Type)),
-				zap.String("txid", e.TransactionId),
-				zap.Error(err),
+			p.logger.ErrorContext(ctx, "event encode failed",
+				slog.String(logfields.KeyEventType, string(e.Type)),
+				logging.Err(err),
 			)
 			if firstErr == nil {
 				firstErr = err
 			}
 			continue
+		}
+		if tc, ok := trace.FromContext(ctx); ok {
+			evtracing.InjectTrace(&ce, tc)
 		}
 		if err := p.publishOnce(ctx, ce, e); err != nil {
 			if firstErr == nil {
@@ -52,10 +59,9 @@ func (p *Publisher) Publish(ctx context.Context, events ...event.Event) error {
 			}
 			continue
 		}
-		p.logger.Info("event published",
-			zap.String("type", string(e.Type)),
-			zap.String("subject", ce.Subject()),
-			zap.String("txid", e.TransactionId),
+		p.logger.DebugContext(ctx, "event published",
+			slog.String(logfields.KeyEventType, string(e.Type)),
+			slog.String(logfields2.KeyMessagingDestination, ce.Subject()),
 		)
 	}
 	return firstErr
@@ -64,12 +70,11 @@ func (p *Publisher) Publish(ctx context.Context, events ...event.Event) error {
 func (p *Publisher) publishOnce(ctx context.Context, ce cloudevents.Event, orig event.Event) error {
 	// Fast path: no retries configured — skip building the backoff entirely.
 	if p.maxAttempts <= 1 {
-		if err := p.inner.Publish(ce); err != nil {
-			p.logger.Error("publish exhausted retries, dropping event",
-				zap.String("type", string(orig.Type)),
-				zap.String("subject", ce.Subject()),
-				zap.String("txid", orig.TransactionId),
-				zap.Error(err),
+		if err := p.inner.Publish(ctx, ce); err != nil {
+			p.logger.ErrorContext(ctx, "event publish failed",
+				slog.String(logfields.KeyEventType, string(orig.Type)),
+				slog.String(logfields2.KeyMessagingDestination, ce.Subject()),
+				logging.Err(err),
 			)
 			return fmt.Errorf("publish: %w", err)
 		}
@@ -83,14 +88,13 @@ func (p *Publisher) publishOnce(ctx context.Context, ce cloudevents.Event, orig 
 	attempts := uint64(p.maxAttempts - 1)
 	boRetry := backoff.WithContext(backoff.WithMaxRetries(bo, attempts), ctx)
 
-	op := func() error { return p.inner.Publish(ce) }
+	op := func() error { return p.inner.Publish(ctx, ce) }
 
 	if err := backoff.Retry(op, boRetry); err != nil {
-		p.logger.Error("publish exhausted retries, dropping event",
-			zap.String("type", string(orig.Type)),
-			zap.String("subject", ce.Subject()),
-			zap.String("txid", orig.TransactionId),
-			zap.Error(err),
+		p.logger.ErrorContext(ctx, "event publish failed",
+			slog.String(logfields.KeyEventType, string(orig.Type)),
+			slog.String(logfields2.KeyMessagingDestination, ce.Subject()),
+			logging.Err(err),
 		)
 		return fmt.Errorf("publish: %w", err)
 	}

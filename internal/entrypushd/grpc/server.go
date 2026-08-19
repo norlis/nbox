@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 
+	"github.com/norlis/httpgate/logging"
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -47,11 +48,11 @@ func NewServer(
 				if err := srv.Serve(lis); err != nil && !errors.Is(err, googlegrpc.ErrServerStopped) {
 					logger.Error("grpc server stopped",
 						slog.String("addr", addr),
-						slog.Any("error", err),
+						logging.Err(err),
 					)
 				}
 			}()
-			logger.Info("grpc server listening", slog.String("addr", addr))
+			logger.Info("server listening", slog.String("addr", addr))
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
@@ -64,7 +65,7 @@ func NewServer(
 			case <-done:
 				logger.Info("grpc server stopped gracefully")
 			case <-ctx.Done():
-				logger.Warn("grpc graceful stop timed out; forcing stop", slog.Any("error", ctx.Err()))
+				logger.WarnContext(ctx, "server stop forced", logging.Err(ctx.Err()))
 				srv.Stop()
 			}
 			return nil

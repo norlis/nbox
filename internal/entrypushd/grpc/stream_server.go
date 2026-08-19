@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/norlis/httpgate/logging"
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -18,6 +19,7 @@ import (
 	"nbox/internal/entrypushd/nboxclient"
 	"nbox/internal/entrypushd/vault"
 	"nbox/internal/event"
+	"nbox/internal/logfields"
 )
 
 // Snapshotter is the subset of *nbox.Client that StreamServer needs.
@@ -82,13 +84,13 @@ func (s *StreamServer) Watch(req *streamv1.WatchRequest, stream streamv1.KVStrea
 		clientID = vault.DeriveClientID(subject, nonce, pub)
 	}
 
-	s.logger.Info("client connected",
-		slog.String("id", id),
+	s.logger.InfoContext(stream.Context(), "client connected",
+		slog.String("subscription_id", id),
 		slog.String("client_id", clientID),
 		slog.Any("prefixes", req.Prefixes),
 		slog.Any("types", req.Types),
 	)
-	defer s.logger.Info("client disconnected", slog.String("id", id))
+	defer s.logger.InfoContext(stream.Context(), "client disconnected", slog.String("subscription_id", id))
 
 	// (2) snapshot-on-connect: only when a client is configured and the
 	// request scopes prefixes (no full-tree fetch).
@@ -124,12 +126,12 @@ func (s *StreamServer) Watch(req *streamv1.WatchRequest, stream streamv1.KVStrea
 			if pub != nil && evt.Type == string(event.EntryUpserted) && isVaultKey(evt.Subject) {
 				plaintext, err := s.resolveOnce(stream.Context(), evt.Id, token, evt.Subject)
 				if err != nil {
-					s.logger.Error("vault resolve failed on delta, failing closed", slog.String("key", evt.Subject), slog.Any("error", err))
+					s.logger.ErrorContext(stream.Context(), "vault resolve failed", slog.String(logfields.KeyNboxKey, evt.Subject), logging.Err(err))
 					return status.Errorf(codes.Unavailable, "vault resolve failed: %v", err)
 				}
 				sealed, err := s.sealValue(evt.Subject, plaintext, pub)
 				if err != nil {
-					s.logger.Error("vault seal failed on delta, failing closed", slog.String("key", evt.Subject), slog.Any("error", err))
+					s.logger.ErrorContext(stream.Context(), "vault seal failed", slog.String(logfields.KeyNboxKey, evt.Subject), logging.Err(err))
 					return status.Errorf(codes.Unavailable, "vault seal failed: %v", err)
 				}
 				sealed.TimeUnixMs = evt.TimeUnixMs // preserve ingress time across the reseal
@@ -148,7 +150,7 @@ func (s *StreamServer) sendSnapshot(stream streamv1.KVStream_WatchServer, prefix
 	for _, prefix := range prefixes {
 		entries, err := s.snapshot.Snapshot(stream.Context(), token, prefix)
 		if err != nil {
-			s.logger.Error("snapshot fetch failed, failing closed", slog.String("prefix", prefix), slog.Any("error", err))
+			s.logger.ErrorContext(stream.Context(), "snapshot fetch failed", slog.String(logfields.KeyNboxPrefix, prefix), logging.Err(err))
 			return status.Errorf(codes.Unavailable, "snapshot failed: %v", err)
 		}
 		for i := range entries {
@@ -156,7 +158,7 @@ func (s *StreamServer) sendSnapshot(stream streamv1.KVStream_WatchServer, prefix
 			if pub != nil && isVaultKey(entries[i].Key) {
 				evt, err = s.sealFor(stream.Context(), entries[i].Key, token, pub)
 				if err != nil {
-					s.logger.Error("vault seal failed, failing closed", slog.String("key", entries[i].Key), slog.Any("error", err))
+					s.logger.ErrorContext(stream.Context(), "vault seal failed", slog.String(logfields.KeyNboxKey, entries[i].Key), logging.Err(err))
 					return status.Errorf(codes.Unavailable, "vault seal failed: %v", err)
 				}
 			} else {
@@ -164,7 +166,7 @@ func (s *StreamServer) sendSnapshot(stream streamv1.KVStream_WatchServer, prefix
 				if err != nil {
 					// Fail-closed, like the seal path: a partial snapshot
 					// would leave the agent with silent gaps.
-					s.logger.Error("snapshot event build failed, failing closed", slog.String("key", entries[i].Key), slog.Any("error", err))
+					s.logger.ErrorContext(stream.Context(), "snapshot event build failed", slog.String(logfields.KeyNboxKey, entries[i].Key), logging.Err(err))
 					return status.Errorf(codes.Unavailable, "snapshot failed: %v", err)
 				}
 			}
@@ -172,7 +174,7 @@ func (s *StreamServer) sendSnapshot(stream streamv1.KVStream_WatchServer, prefix
 				return err
 			}
 		}
-		s.logger.Info("snapshot sent", slog.String("prefix", prefix), slog.Int("entries", len(entries)))
+		s.logger.InfoContext(stream.Context(), "snapshot sent", slog.String(logfields.KeyNboxPrefix, prefix), slog.Int("entries", len(entries)))
 	}
 	return nil
 }

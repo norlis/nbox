@@ -5,6 +5,8 @@ import (
 	"log/slog"
 
 	natsgo "github.com/nats-io/nats.go"
+	logfields2 "github.com/norlis/event-driven/pkg/kit/logfields"
+
 	"github.com/norlis/event-driven/pkg/eventmux"
 	"github.com/norlis/event-driven/pkg/transport/nats/core"
 )
@@ -19,7 +21,7 @@ func NewNATSSubscriber(
 ) (eventmux.Subscription, error) {
 	sub, err := core.NewSubscriber(nc, core.SubscriberConfig{
 		Subject: cfg.EventSubject(),
-	}, logger.With(slog.String("logger", "nats-subscriber")))
+	}, logger.With(slog.String(logfields2.KeyLogLogger, "nats-subscriber")))
 	if err != nil {
 		return nil, fmt.Errorf("entrypushd: nats subscriber: %w", err)
 	}

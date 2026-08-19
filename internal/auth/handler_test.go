@@ -5,12 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"go.uber.org/zap"
 	"nbox/internal/auth"
 	"nbox/internal/nbox"
 	"nbox/internal/transport/httpx"
@@ -36,7 +36,7 @@ func (s *stubStore) ValidatePassword(_ context.Context, _, _ string) (*auth.User
 func newTestHandler(store auth.Store) *auth.TokenHandler {
 	cfg := &nbox.Config{HmacSecretKey: []byte("test-secret-key-32-bytes-long!!!")}
 	render := httpx.New(nil)
-	return auth.NewTokenHandler(store, cfg, render, zap.NewNop())
+	return auth.NewTokenHandler(store, cfg, render, slog.New(slog.DiscardHandler))
 }
 
 func doTokenRequest(t *testing.T, h *auth.TokenHandler, body string) *httptest.ResponseRecorder {

@@ -1,18 +1,18 @@
 package publisher_test
 
 import (
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 	"nbox/internal/event/publisher"
 )
 
 func TestNew_DisabledViaFlag_ReturnsNoop(t *testing.T) {
 	pub, err := publisher.New(
 		publisher.Config{Enabled: false},
-		nil, "irrelevant", zap.NewNop(),
+		nil, "irrelevant", slog.New(slog.DiscardHandler),
 	)
 	require.NoError(t, err)
 	_, isNoop := pub.(*publisher.NoopPublisher)
@@ -22,7 +22,7 @@ func TestNew_DisabledViaFlag_ReturnsNoop(t *testing.T) {
 func TestNew_EnabledWithoutSubject_FailsFast(t *testing.T) {
 	_, err := publisher.New(
 		publisher.Config{Enabled: true},
-		nil, "", zap.NewNop(),
+		nil, "", slog.New(slog.DiscardHandler),
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "empty event subject")

@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	streamv1 "nbox/gen/stream/v1"
+	"nbox/internal/logfields"
 )
 
 const subscriberBuffer = 20
@@ -89,9 +90,9 @@ func (b *Broker) Publish(e *streamv1.Event) {
 		default:
 			b.logger.Warn("subscriber slow, dropping event",
 				slog.String("subscriber_id", id),
-				slog.String("event_id", e.Id),
-				slog.String("type", e.Type),
-				slog.String("subject", e.Subject),
+				slog.String(logfields.KeyEventID, e.Id),
+				slog.String(logfields.KeyEventType, e.Type),
+				slog.String(logfields.KeyNboxKey, e.Subject),
 			)
 		}
 	}

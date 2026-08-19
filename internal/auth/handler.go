@@ -3,13 +3,14 @@ package auth
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/norlis/httpgate/presenter"
 	_ "github.com/norlis/httpgate/problem"
-	"go.uber.org/zap"
+	"nbox/internal/logfields"
 	"nbox/internal/nbox"
 	"nbox/internal/transport/httpx"
 )
@@ -31,10 +32,10 @@ type TokenHandler struct {
 	repo   Store
 	config *nbox.Config
 	render *httpx.Render
-	logger *zap.Logger
+	logger *slog.Logger
 }
 
-func NewTokenHandler(repo Store, config *nbox.Config, render *httpx.Render, logger *zap.Logger) *TokenHandler {
+func NewTokenHandler(repo Store, config *nbox.Config, render *httpx.Render, logger *slog.Logger) *TokenHandler {
 	return &TokenHandler{repo: repo, config: config, render: render, logger: logger}
 }
 
@@ -63,8 +64,9 @@ func (h *TokenHandler) Token(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.repo.ValidatePassword(r.Context(), payload.Username, payload.Password)
 	if err != nil {
-		h.logger.Error("ErrValidatePassword", zap.Error(err))
 		if errors.Is(err, ErrUserNotFound) || errors.Is(err, ErrInvalidPassword) {
+			// Client input failure, not a service fault — WARN, never the password itself.
+			h.logger.WarnContext(r.Context(), "authentication failed", slog.String(logfields.KeyUserID, payload.Username))
 			h.render.Error(w, r, ErrInvalidCredentials, presenter.WithStatus(http.StatusUnauthorized))
 			return
 		}

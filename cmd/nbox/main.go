@@ -10,8 +10,6 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"nbox/internal/application"
 	auth "nbox/internal/auth"
 	authstore "nbox/internal/auth/store"
@@ -31,6 +29,7 @@ import (
 	"nbox/internal/tracking"
 	trackingstore "nbox/internal/tracking/store"
 	transporthttp "nbox/internal/transport/http"
+	"nbox/internal/version"
 	"nbox/pkg/logger"
 )
 
@@ -64,7 +63,7 @@ NNNNNNNN         NNNNNNNBBBBBBBBBBBBBBBBB        OOOOOOOOO     XXXXXXX       XXX
 func eventModule(pubCfg publisher.Config) fx.Option {
 	if !pubCfg.Enabled {
 		return fx.Module("events",
-			fx.Provide(func(log *zap.Logger) event.Publisher {
+			fx.Provide(func(log *slog.Logger) event.Publisher {
 				return publisher.NewNoop(log)
 			}),
 		)
@@ -77,7 +76,7 @@ func eventModule(pubCfg publisher.Config) fx.Option {
 			},
 			fx.Private,
 		),
-		fx.Provide(func(pubCfg publisher.Config, cfg *nbox.Config, nc *natsgo.Conn, log *zap.Logger) (event.Publisher, error) {
+		fx.Provide(func(pubCfg publisher.Config, cfg *nbox.Config, nc *natsgo.Conn, log *slog.Logger) (event.Publisher, error) {
 			return publisher.New(pubCfg, nc, cfg.EventSubject(), log)
 		}),
 	)
@@ -98,10 +97,13 @@ func main() {
 
 	app := fx.New(
 		fx.Provide(logger.LoadConfig),
-		fx.Provide(logger.NewLogger),
-		fx.Provide(logger.NewSlog),
-		fx.WithLogger(func(log *zap.Logger) fxevent.Logger {
-			return &fxevent.ZapLogger{Logger: log.WithOptions(zap.IncreaseLevel(zapcore.WarnLevel))}
+		fx.Provide(func(cfg logger.Config) *slog.Logger {
+			return logger.New(cfg, "nbox", version.OrDev())
+		}),
+		fx.WithLogger(func(log *slog.Logger) fxevent.Logger {
+			l := &fxevent.SlogLogger{Logger: log}
+			l.UseLogLevel(slog.LevelDebug) // fx noise only visible with LOG_LEVEL=debug
+			return l
 		}),
 
 		// Core infrastructure
@@ -150,11 +152,9 @@ func main() {
 		fx.Provide(trackingstore.NewDynamoDB),
 		fx.Provide(entrystore.NewDynamoDB),
 		fx.Provide(entrystore.NewSSM),
-		fx.Provide(func(base *entrystore.SSM, logger *zap.Logger) *entrystore.SSMSecure {
-			return entrystore.NewSSMSecure(base, logger)
-		}),
+		fx.Provide(entrystore.NewSSMSecure),
 		fx.Provide(func(
-			l *zap.Logger,
+			l *slog.Logger,
 			pr prefix.Store,
 			ddb *entrystore.DynamoDB,
 			ssm *entrystore.SSM,

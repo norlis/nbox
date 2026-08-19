@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	"log"
+	"log/slog"
 
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"nbox/internal/entrypushd"
 	platformaws "nbox/internal/platform/aws"
+	"nbox/internal/version"
 	"nbox/pkg/logger"
 )
 
@@ -47,9 +47,13 @@ func main() {
 	app := fx.New(
 		fx.Supply(cfg),
 		fx.Provide(logger.LoadConfig),
-		fx.Provide(logger.NewLogger),
-		fx.WithLogger(func(l *zap.Logger) fxevent.Logger {
-			return &fxevent.ZapLogger{Logger: l.WithOptions(zap.IncreaseLevel(zapcore.WarnLevel))}
+		fx.Provide(func(lcfg logger.Config) *slog.Logger {
+			return logger.New(lcfg, "entrypushd", version.OrDev())
+		}),
+		fx.WithLogger(func(log *slog.Logger) fxevent.Logger {
+			l := &fxevent.SlogLogger{Logger: log}
+			l.UseLogLevel(slog.LevelDebug)
+			return l
 		}),
 		// entrypushd needs the AWS SDK config (for AWS STS auth) and DynamoDB
 		// (for the dynamic-config table). No SQS — events now arrive via NATS.

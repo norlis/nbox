@@ -3,74 +3,63 @@ package spec
 import (
 	"context"
 	"io/fs"
+	"log/slog"
 	"path/filepath"
 
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/cuecontext"
-	"go.uber.org/zap"
+	"github.com/norlis/httpgate/logging"
+	"nbox/internal/logfields"
 )
 
 // FSStore carga SpecDefinitions desde un filesystem.
 // Implementa SpecStore.
 type FSStore struct {
 	fileSystem fs.FS
-	logger     *zap.Logger
+	logger     *slog.Logger
 }
 
 // NewFSStore creates a new filesystem-based store.
-func NewFSStore(fileSystem fs.FS, logger *zap.Logger) *FSStore {
+func NewFSStore(fileSystem fs.FS, logger *slog.Logger) *FSStore {
 	return &FSStore{
 		fileSystem: fileSystem,
-		logger:     logger.Named("boxspec.store"),
+		logger:     logger,
 	}
 }
 
 // LoadAll scans the filesystem and extracts specs from .cue files.
-func (s *FSStore) LoadAll(_ context.Context) ([]SpecDefinition, error) {
+func (s *FSStore) LoadAll(ctx context.Context) ([]SpecDefinition, error) {
 	var specs []SpecDefinition
 	cueCtx := cuecontext.New()
 
-	s.logger.Info("Starting to load specs from filesystem")
-
 	err := fs.WalkDir(s.fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			s.logger.Warn("Error walking directory", zap.String("path", path), zap.Error(err))
+			s.logger.WarnContext(ctx, "boxspec definition skipped", slog.String(logfields.KeyFilePath, path), logging.Err(err))
 			return nil
 		}
 		if d.IsDir() {
-			s.logger.Debug("Entering directory", zap.String("path", path))
 			return nil
 		}
 		if filepath.Ext(path) != ".cue" {
 			return nil
 		}
 
-		s.logger.Debug("Found CUE file", zap.String("path", path))
-
-		bytes, err := fs.ReadFile(s.fileSystem, path)
+		content, err := fs.ReadFile(s.fileSystem, path)
 		if err != nil {
-			s.logger.Error("Failed to read file", zap.String("path", path), zap.Error(err))
+			s.logger.WarnContext(ctx, "boxspec definition skipped", slog.String(logfields.KeyFilePath, path), logging.Err(err))
 			return nil
 		}
-		content := string(bytes)
 
-		s.logger.Debug("Compiling CUE file", zap.String("path", path), zap.Int("size", len(content)))
-
-		val := cueCtx.CompileString(content)
+		val := cueCtx.CompileString(string(content))
 		if val.Err() != nil {
-			s.logger.Error("Invalid CUE syntax", zap.String("path", path), zap.Error(val.Err()))
+			s.logger.WarnContext(ctx, "boxspec definition skipped", slog.String(logfields.KeyFilePath, path), logging.Err(val.Err()))
 			return nil
 		}
-
-		s.logger.Debug("CUE compiled successfully", zap.String("path", path))
 
 		metaVal := val.LookupPath(cue.ParsePath("#Meta"))
 		if !metaVal.Exists() {
-			s.logger.Debug("No #Meta block found, skipping", zap.String("path", path))
 			return nil
 		}
-
-		s.logger.Debug("Found #Meta block", zap.String("path", path))
 
 		var meta struct {
 			ID            string   `json:"id"`
@@ -79,15 +68,14 @@ func (s *FSStore) LoadAll(_ context.Context) ([]SpecDefinition, error) {
 			MatchPatterns []string `json:"matchPatterns"`
 		}
 		if err := metaVal.Decode(&meta); err != nil {
-			s.logger.Error("Failed to decode #Meta", zap.String("path", path), zap.Error(err))
+			s.logger.WarnContext(ctx, "boxspec definition skipped", slog.String(logfields.KeyFilePath, path), logging.Err(err))
 			return nil
 		}
 
-		s.logger.Info("Loaded spec",
-			zap.String("path", path),
-			zap.String("id", meta.ID),
-			zap.String("name", meta.Name),
-			zap.Strings("matchPatterns", meta.MatchPatterns),
+		s.logger.DebugContext(ctx, "boxspec definition loaded",
+			slog.String(logfields.KeyFilePath, path),
+			slog.String(logfields.KeyEventID, meta.ID),
+			slog.String(logfields.KeyNboxTemplate, meta.Name),
 		)
 
 		specs = append(specs, SpecDefinition{
@@ -95,12 +83,12 @@ func (s *FSStore) LoadAll(_ context.Context) ([]SpecDefinition, error) {
 			Name:          meta.Name,
 			Version:       meta.Version,
 			MatchPatterns: meta.MatchPatterns,
-			RawContent:    content,
+			RawContent:    string(content),
 		})
 		return nil
 	})
 
-	s.logger.Info("Finished loading specs", zap.Int("total", len(specs)))
+	s.logger.InfoContext(ctx, "boxspec definitions loaded", slog.Int(logfields.KeyEntriesTotal, len(specs)))
 
 	return specs, err
 }

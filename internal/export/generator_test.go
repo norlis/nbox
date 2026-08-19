@@ -1,12 +1,12 @@
 package export_test
 
 import (
+	"log/slog"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 	"nbox/internal/entry"
 	"nbox/internal/export"
 	exporter "nbox/internal/export/exporter"
@@ -140,7 +140,7 @@ func TestGenerator_GetFilename_UsesInstanceNameFromConfig(t *testing.T) {
 	t.Parallel()
 
 	cfg := &nbox.Config{InstanceName: "myapp"}
-	g := export.NewGenerator(nil, cfg, zap.NewNop())
+	g := export.NewGenerator(nil, cfg, slog.New(slog.DiscardHandler))
 
 	filename := g.GetFilename(export.FormatJSON, "production")
 
@@ -153,7 +153,7 @@ func TestGenerator_GetFilename_DefaultsToNboxWhenInstanceNameEmpty(t *testing.T)
 	t.Parallel()
 
 	cfg := &nbox.Config{InstanceName: ""}
-	g := export.NewGenerator(nil, cfg, zap.NewNop())
+	g := export.NewGenerator(nil, cfg, slog.New(slog.DiscardHandler))
 
 	filename := g.GetFilename(export.FormatDotEnv, "qa")
 

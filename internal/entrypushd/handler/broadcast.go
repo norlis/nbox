@@ -8,8 +8,10 @@ import (
 	"time"
 
 	eventd "github.com/norlis/event-driven/pkg/event"
+	logfields2 "github.com/norlis/event-driven/pkg/kit/logfields"
 	streamv1 "nbox/gen/stream/v1"
 	"nbox/internal/event"
+	"nbox/internal/logfields"
 )
 
 // Publisher is the subset of the gRPC broker the handler depends on.
@@ -33,18 +35,19 @@ func NewBroadcast(broker Publisher, logger *slog.Logger) *Broadcast {
 	}
 	return &Broadcast{
 		broker: broker,
-		logger: logger.With(slog.String("handler", "broadcast")),
+		logger: logger.With(slog.String(logfields2.KeyLogLogger, "broadcast")),
 	}
 }
 
 // Handle is the per-message callback. Caller (the consumer) is
 // responsible for Ack/Nack; this handler just decides whether to
-// broadcast.
+// broadcast. Logs use msg.Context() to inherit the trace from the
+// original publish.
 func (h *Broadcast) Handle(msg *eventd.Message) {
 	if !isAcceptedType(msg.Type()) {
-		h.logger.Debug("event type rejected, skipping",
-			slog.String("type", msg.Type()),
-			slog.String("id", msg.ID()),
+		h.logger.DebugContext(msg.Context(), "event type rejected, skipping",
+			slog.String(logfields.KeyEventType, msg.Type()),
+			slog.String(logfields.KeyEventID, msg.ID()),
 		)
 		return
 	}
@@ -52,10 +55,10 @@ func (h *Broadcast) Handle(msg *eventd.Message) {
 	evt := toProtoEvent(msg)
 	h.broker.Publish(evt)
 
-	h.logger.Info("event broadcast",
-		slog.String("id", evt.Id),
-		slog.String("type", evt.Type),
-		slog.String("subject", evt.Subject),
+	h.logger.InfoContext(msg.Context(), "event broadcast",
+		slog.String(logfields.KeyEventID, evt.Id),
+		slog.String(logfields.KeyEventType, evt.Type),
+		slog.String(logfields.KeyNboxKey, evt.Subject),
 	)
 }
 

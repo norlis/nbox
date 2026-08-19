@@ -8,6 +8,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	natsgo "github.com/nats-io/nats.go"
+	logfields2 "github.com/norlis/event-driven/pkg/kit/logfields"
+	"github.com/norlis/httpgate/trace"
 	"go.uber.org/fx"
 	googlegrpc "google.golang.org/grpc"
 	"nbox/internal/auth"
@@ -24,7 +26,6 @@ import (
 // AppRole + AWS STS M2M authentication.
 var Module = fx.Module("entrypushd",
 	fx.Provide(
-		NewSlog,
 		// NATS connection (fan-out bus).
 		func(cfg Config, lc fx.Lifecycle, log *slog.Logger) (*natsgo.Conn, error) {
 			return natsbus.NewConn(cfg.NatsURL, "entrypushd", lc, log)
@@ -34,13 +35,15 @@ var Module = fx.Module("entrypushd",
 		grpcint.NewBroker,
 		// Snapshotter (optional, Fase 2.1.d): a real nbox.Client when
 		// NboxURL is set, nil otherwise (Watch streams deltas only).
-		// Reuses the shared 10s *http.Client.
-		func(cfg Config, hc *http.Client, logger *slog.Logger) grpcint.Snapshotter {
+		// Dedicated client with a traced transport (the shared *http.Client
+		// stays reserved for STS forwarding).
+		func(cfg Config, logger *slog.Logger) grpcint.Snapshotter {
 			if cfg.NboxURL == "" {
-				logger.Warn("snapshot disabled: ENTRYPUSHD_NBOX_URL is empty; Watch will stream deltas only")
+				logger.Warn("snapshot disabled, streaming deltas only")
 				return nil
 			}
-			logger.Info("snapshot enabled", slog.String("nbox_url", cfg.NboxURL))
+			logger.Info("snapshot enabled", slog.String(logfields2.KeyServerAddress, cfg.NboxURL))
+			hc := &http.Client{Timeout: 10 * time.Second, Transport: &trace.Transport{}}
 			return nboxclient.NewClient(cfg.NboxURL, hc)
 		},
 		grpcint.NewStreamServer,

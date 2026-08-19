@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -11,9 +12,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"go.uber.org/zap"
+	"github.com/norlis/httpgate/logging"
 	"nbox/internal/application"
 	"nbox/internal/entry"
+	"nbox/internal/logfields"
 	"nbox/internal/nbox"
 	platformaws "nbox/internal/platform/aws"
 	"nbox/internal/prefix"
@@ -63,7 +65,7 @@ type DynamoDB struct {
 	client      dynamodbClientAPI
 	config      *nbox.Config
 	pathUseCase *entry.Processor
-	logger      *zap.Logger
+	logger      *slog.Logger
 	dynamodbKit dynamodbKitAPI
 }
 
@@ -71,7 +73,7 @@ func NewDynamoDB(
 	client *dynamodb.Client,
 	config *nbox.Config,
 	pathUseCase *entry.Processor,
-	logger *zap.Logger,
+	logger *slog.Logger,
 	dynamodbKit *platformaws.DynamoDBKit,
 ) *DynamoDB {
 	return &DynamoDB{
@@ -95,6 +97,7 @@ func (d *DynamoDB) RetrieveMany(ctx context.Context, keys []string) (map[string]
 	seen := make(map[string]struct{}, len(keys))
 	attributes := make([]map[string]types.AttributeValue, 0, len(keys))
 
+	var marshalFailed int
 	for _, fullKey := range keys {
 		if _, dup := seen[fullKey]; dup {
 			continue
@@ -103,13 +106,15 @@ func (d *DynamoDB) RetrieveMany(ctx context.Context, keys []string) (map[string]
 
 		path, err := attributevalue.Marshal(d.pathUseCase.PathWithoutKey(fullKey))
 		if err != nil {
-			d.logger.Error("Failed to marshal path", zap.String("key", fullKey), zap.Error(err))
+			marshalFailed++
+			d.logger.DebugContext(ctx, "marshal path failed", slog.String(logfields.KeyNboxKey, fullKey), logging.Err(err))
 			continue
 		}
 
 		key, err := attributevalue.Marshal(d.pathUseCase.BaseKey(fullKey))
 		if err != nil {
-			d.logger.Error("Failed to marshal key", zap.String("key", fullKey), zap.Error(err))
+			marshalFailed++
+			d.logger.DebugContext(ctx, "marshal key failed", slog.String(logfields.KeyNboxKey, fullKey), logging.Err(err))
 			continue
 		}
 
@@ -125,10 +130,12 @@ func (d *DynamoDB) RetrieveMany(ctx context.Context, keys []string) (map[string]
 
 	results := make(map[string]*entry.Entry)
 
+	var unmarshalFailed int
 	for _, item := range items {
 		var r record
 		if err := attributevalue.UnmarshalMap(item, &r); err != nil {
-			d.logger.Error("Failed to unmarshal record", zap.Any("item", item), zap.Error(err))
+			unmarshalFailed++
+			d.logger.DebugContext(ctx, "unmarshal record failed", logging.Err(err))
 			continue
 		}
 
@@ -142,6 +149,12 @@ func (d *DynamoDB) RetrieveMany(ctx context.Context, keys []string) (map[string]
 		}
 	}
 
+	if failed := marshalFailed + unmarshalFailed; failed > 0 {
+		d.logger.InfoContext(ctx, "retrieve many completed with failures",
+			slog.Int(logfields.KeyEntriesTotal, len(keys)),
+			slog.Int(logfields.KeyEntriesFailed, failed))
+	}
+
 	return results, nil
 }
 
@@ -153,6 +166,7 @@ func (d *DynamoDB) Upsert(ctx context.Context, entries []entry.Entry) entry.Resu
 	updatedBy := application.ActorFromContext(ctx)
 	now := time.Now().UTC()
 
+	var marshalFailed int
 	for _, en := range entries {
 		sanitizedKey := d.sanitize(en.Key)
 
@@ -183,7 +197,8 @@ func (d *DynamoDB) Upsert(ctx context.Context, entries []entry.Entry) entry.Resu
 
 		item, err := attributevalue.MarshalMap(rec)
 		if err != nil {
-			d.logger.Error("DynamoDB Marshal failed", zap.String("key", sanitizedKey), zap.Error(err))
+			marshalFailed++
+			d.logger.DebugContext(ctx, "marshal failed", slog.String(logfields.KeyNboxKey, sanitizedKey), logging.Err(err))
 			results.Add(sanitizedKey, entry.Failed, fmt.Errorf("marshal error: %w", err))
 			continue
 		}
@@ -219,6 +234,12 @@ func (d *DynamoDB) Upsert(ctx context.Context, entries []entry.Entry) entry.Resu
 				}
 			}
 		}
+	}
+
+	if marshalFailed > 0 {
+		d.logger.InfoContext(ctx, "upsert completed with failures",
+			slog.Int(logfields.KeyEntriesTotal, len(entries)),
+			slog.Int(logfields.KeyEntriesFailed, marshalFailed))
 	}
 
 	requests := make([]types.WriteRequest, 0, len(uniqueRequests))
@@ -524,9 +545,13 @@ func (d *DynamoDB) extractKeyFromRequest(req types.WriteRequest) string {
 
 	var r record
 	if err := attributevalue.UnmarshalMap(item, &r); err != nil {
-		d.logger.Warn("Failed to extract key from failed request",
-			zap.Error(err),
-			zap.Any("request_type", map[bool]string{true: "PutRequest", false: "DeleteRequest"}[req.PutRequest != nil]))
+		requestType := "DeleteRequest"
+		if req.PutRequest != nil {
+			requestType = "PutRequest"
+		}
+		d.logger.Warn("failed to extract key from failed request",
+			logging.Err(err),
+			slog.String("request_type", requestType))
 		return "unknown"
 	}
 

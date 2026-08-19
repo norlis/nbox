@@ -2,19 +2,19 @@ package logger
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/exp/zapslog"
-	"go.uber.org/zap/zapcore"
+	"github.com/norlis/httpgate/logging"
 	"nbox/pkg/env"
 )
 
 // Config holds logger configuration. Loaded once at startup via LoadConfig().
 type Config struct {
-	Level string `env:"LOG_LEVEL" envDefault:"info"`
+	Level       string `env:"LOG_LEVEL"              envDefault:"info"`
+	Environment string `env:"DEPLOYMENT_ENVIRONMENT" envDefault:"development"`
 }
 
 // LoadConfig reads logger configuration from environment variables.
@@ -28,60 +28,33 @@ func LoadConfig() (Config, error) {
 
 type LogLevel string
 
-func (l LogLevel) AtomicLevel() zapcore.Level {
+// Slog maps the config level to slog. Unknown values default to Info.
+func (l LogLevel) Slog() slog.Level {
 	switch strings.ToLower(string(l)) {
 	case "debug":
-		return zapcore.DebugLevel
-	case "info":
-		return zapcore.InfoLevel
+		return slog.LevelDebug
 	case "warn":
-		return zapcore.WarnLevel
+		return slog.LevelWarn
 	case "error":
-		return zapcore.ErrorLevel
+		return slog.LevelError
 	default:
-		return zapcore.InfoLevel
+		return slog.LevelInfo
 	}
 }
 
-func NewLogger(cfg Config) (*zap.Logger, error) {
-	logLevel := LogLevel(cfg.Level)
-
-	atomicLevel := zap.NewAtomicLevelAt(logLevel.AtomicLevel())
-	// var a fxevent.Logger
-	encoderCfg := zap.NewProductionEncoderConfig()
-	encoderCfg.TimeKey = "timestamp"
-	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
-	encoderCfg.EncodeDuration = zapcore.StringDurationEncoder
-
-	config := zap.Config{
-		Level:             atomicLevel,
-		Development:       false,
-		DisableCaller:     false,
-		DisableStacktrace: false,
-		Sampling:          nil,
-		Encoding:          "json",
-		EncoderConfig:     encoderCfg,
-		OutputPaths: []string{
-			"stderr",
-		},
-		ErrorOutputPaths: []string{
-			"stderr",
-		},
-		InitialFields: map[string]any{
-			"pid": os.Getpid(),
-		},
-	}
-
-	logger, err := config.Build()
-	if err != nil {
-		return nil, fmt.Errorf("logger: build zap logger: %w", err)
-	}
-	return logger, nil
+// New returns the platform-standard logger (NDJSON, OTel fields, W3C trace
+// injection) writing to stderr. service is the binary's logical name.
+func New(cfg Config, service, version string) *slog.Logger {
+	return NewWithWriter(os.Stderr, cfg, service, version)
 }
 
-// NewSlog returns a *slog.Logger backed by the given *zap.Logger.
-// Used at the httpgate boundary (middleware, OPA, presenter) so nbox can keep
-// zap as its primary logger. Mirrors internal/entrypushd/slog_adapter.go.
-func NewSlog(z *zap.Logger) *slog.Logger {
-	return slog.New(zapslog.NewHandler(z.Core()))
+// NewWithWriter is New with an explicit sink, for tests. Since httpgate
+// v1.2.0 the standard handler already mirrors event.duration as
+// event.duration_human — no local decoration needed.
+func NewWithWriter(w io.Writer, cfg Config, service, version string) *slog.Logger {
+	return logging.New(w,
+		logging.WithService(service, version),
+		logging.WithEnvironment(cfg.Environment),
+		logging.WithLevel(LogLevel(cfg.Level).Slog()),
+	)
 }

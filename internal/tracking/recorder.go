@@ -3,10 +3,11 @@ package tracking
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"time"
 
-	"github.com/norlis/httpgate/middleware"
-	"go.uber.org/zap"
+	"github.com/norlis/httpgate/logging"
+	"github.com/norlis/httpgate/trace"
 	"nbox/internal/application"
 	"nbox/internal/entry"
 	"nbox/internal/event"
@@ -20,7 +21,7 @@ type Recorder struct {
 	base      entry.Manager
 	tracker   Store
 	publisher event.Publisher
-	logger    *zap.Logger
+	logger    *slog.Logger
 }
 
 // NewRecorder returns an entry.Manager decorator that records changes and publishes events.
@@ -28,7 +29,7 @@ func NewRecorder(
 	base entry.Manager,
 	tracker Store,
 	publisher event.Publisher,
-	logger *zap.Logger,
+	logger *slog.Logger,
 ) entry.Manager {
 	return &Recorder{
 		base:      base,
@@ -48,16 +49,16 @@ func (r *Recorder) user(ctx context.Context) string {
 func (r *Recorder) async(parent context.Context, task string, fn func(ctx context.Context)) {
 	bgCtx := context.WithoutCancel(parent)
 	go func() {
+		ctx, cancel := context.WithTimeout(bgCtx, asyncTaskTimeout)
+		defer cancel()
 		defer func() {
 			if rec := recover(); rec != nil {
-				r.logger.Error("async task panicked",
-					zap.String("task", task),
-					zap.Any("recover", rec),
+				r.logger.ErrorContext(ctx, "async task panicked",
+					slog.String("task", task),
+					slog.Any("recover", rec),
 				)
 			}
 		}()
-		ctx, cancel := context.WithTimeout(bgCtx, asyncTaskTimeout)
-		defer cancel()
 		fn(ctx)
 	}()
 }
@@ -81,9 +82,7 @@ func (r *Recorder) publishEvents(ctx context.Context, traceID, updatedBy string,
 		payloadBytes, err := json.Marshal(payloadObj)
 		if err != nil {
 			// Drop rather than publish an event with a nil payload.
-			r.logger.Error("marshal event payload failed; event dropped",
-				zap.String("transactionId", traceID),
-				zap.Error(err))
+			r.logger.ErrorContext(ctx, "event payload encode failed", logging.Err(err))
 			continue
 		}
 
@@ -100,12 +99,8 @@ func (r *Recorder) publishEvents(ctx context.Context, traceID, updatedBy string,
 		return
 	}
 
-	if err := r.publisher.Publish(ctx, events...); err != nil {
-		r.logger.Error("publish batch failed",
-			zap.Int("count", len(events)),
-			zap.Error(err),
-		)
-	}
+	// Publisher already logs the failure (it's the layer that decides to drop the event).
+	_ = r.publisher.Publish(ctx, events...)
 }
 
 func (r *Recorder) registerChanges(ctx context.Context, updatedBy string, results entry.Results, entryIndex map[string]entry.Entry) {
@@ -150,7 +145,7 @@ func (r *Recorder) registerChanges(ctx context.Context, updatedBy string, result
 
 	if len(batch) > 0 {
 		if err := r.tracker.CreateBatch(ctx, batch); err != nil {
-			r.logger.Error("Async tracking batch failed", zap.Error(err))
+			r.logger.ErrorContext(ctx, "async tracking batch failed", logging.Err(err))
 		}
 	}
 }
@@ -163,7 +158,8 @@ func (r *Recorder) Upsert(ctx context.Context, entries []entry.Entry) entry.Resu
 
 	results := r.base.Upsert(ctx, entries)
 	updatedBy := r.user(ctx)
-	id := middleware.TraceIDFromContext(ctx)
+	tc, _ := trace.FromContext(ctx)
+	id := tc.TraceID // "" si no hay trace en ctx; el evento sale sin TransactionId
 
 	r.async(ctx, "upsert.track", func(c context.Context) {
 		r.registerChanges(c, updatedBy, results, entryIndex)

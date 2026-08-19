@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	natsgo "github.com/nats-io/nats.go"
+	"github.com/norlis/httpgate/logging"
 	"go.uber.org/fx"
 )
 
@@ -25,7 +26,7 @@ func NewConn(url, name string, lc fx.Lifecycle, logger *slog.Logger) (*natsgo.Co
 		}),
 		natsgo.DisconnectErrHandler(func(_ *natsgo.Conn, e error) {
 			if e != nil {
-				logger.Warn("nats disconnected", slog.Any("error", e))
+				logger.Warn("nats disconnected", logging.Err(e))
 			}
 		}),
 	)

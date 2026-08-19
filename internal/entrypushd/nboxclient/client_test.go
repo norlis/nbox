@@ -8,9 +8,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/norlis/httpgate/trace"
 	"github.com/stretchr/testify/require"
 	"nbox/internal/entrypushd/nboxclient"
 )
+
+func TestSnapshot_PropagatesTraceparent(t *testing.T) {
+	var gotHeader string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("traceparent")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+
+	hc := &http.Client{Transport: &trace.Transport{}}
+	c := nboxclient.NewClient(srv.URL, hc)
+	tc := trace.New()
+	_, err := c.Snapshot(trace.NewContext(context.Background(), tc), "tok", "global")
+	require.NoError(t, err)
+	require.Equal(t, tc.Traceparent(), gotHeader)
+}
 
 func TestSnapshot_RetriesOnServerError(t *testing.T) {
 	var attempts atomic.Int32

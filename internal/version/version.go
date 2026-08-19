@@ -11,3 +11,11 @@ var GitHash string
 // Date is the UTC build timestamp in RFC3339 format.
 // Injected via: -X nbox/internal/version.Date=$(DATE).
 var Date string
+
+// OrDev returns GitHash, or "unknown.dev" for builds without ldflags.
+func OrDev() string {
+	if GitHash == "" {
+		return "unknown.dev"
+	}
+	return GitHash
+}

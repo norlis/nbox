@@ -1,16 +1,17 @@
 package publisher
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
 	cloudevents "github.com/cloudevents/sdk-go/v2/event"
+	"github.com/norlis/httpgate/trace"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest/observer"
 	"nbox/internal/event"
 )
 
@@ -21,7 +22,7 @@ type captureInner struct {
 	err  error
 }
 
-func (c *captureInner) Publish(ce cloudevents.Event) error {
+func (c *captureInner) Publish(_ context.Context, ce cloudevents.Event) error {
 	c.seen = append(c.seen, ce)
 	return c.err
 }
@@ -32,7 +33,7 @@ func TestPublisher_MapsAllCEAttributes(t *testing.T) {
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
-		logger:      zap.NewNop(),
+		logger:      slog.New(slog.DiscardHandler),
 	}
 
 	entryJSON := json.RawMessage(`{"Key":"development/banking/api_key","Value":"v","Secure":false}`)
@@ -65,7 +66,7 @@ func TestPublisher_PublishesMultipleEvents(t *testing.T) {
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
-		logger:      zap.NewNop(),
+		logger:      slog.New(slog.DiscardHandler),
 	}
 
 	e1 := event.Event{Type: event.EntryUpserted, TransactionId: "t1", Timestamp: time.Now(), Payload: json.RawMessage(`{"Key":"a/b"}`)}
@@ -84,7 +85,7 @@ func TestPublisher_ReturnsFirstError(t *testing.T) {
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
-		logger:      zap.NewNop(),
+		logger:      slog.New(slog.DiscardHandler),
 	}
 
 	e := event.Event{Type: event.EntryUpserted, TransactionId: "t1", Timestamp: time.Now(), Payload: json.RawMessage(`{"Key":"a"}`)}
@@ -98,7 +99,7 @@ func TestPublisher_PrefixForEmptyKey(t *testing.T) {
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
-		logger:      zap.NewNop(),
+		logger:      slog.New(slog.DiscardHandler),
 	}
 
 	e := event.Event{Type: event.EntryUpserted, TransactionId: "t", Timestamp: time.Now(), Payload: json.RawMessage(`{}`)}
@@ -117,7 +118,7 @@ type flakyInner struct {
 	attempts int
 }
 
-func (f *flakyInner) Publish(ce cloudevents.Event) error {
+func (f *flakyInner) Publish(_ context.Context, ce cloudevents.Event) error {
 	f.attempts++
 	if f.attempts <= f.failN {
 		return errors.New("transient")
@@ -151,7 +152,7 @@ type countingInner struct {
 	calls int
 }
 
-func (c *countingInner) Publish(_ cloudevents.Event) error {
+func (c *countingInner) Publish(_ context.Context, _ cloudevents.Event) error {
 	c.calls++
 	return nil
 }
@@ -164,7 +165,7 @@ func TestPublisher_NoRetry_CallsInnerOnce(t *testing.T) {
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
-		logger:      zap.NewNop(),
+		logger:      slog.New(slog.DiscardHandler),
 	}
 
 	e := event.Event{
@@ -186,7 +187,7 @@ func TestPublisher_NoRetry_ReturnsErrorOnFailure(t *testing.T) {
 		inner:       inner,
 		source:      "nbox",
 		maxAttempts: 1,
-		logger:      zap.NewNop(),
+		logger:      slog.New(slog.DiscardHandler),
 	}
 
 	e := event.Event{
@@ -201,6 +202,35 @@ func TestPublisher_NoRetry_ReturnsErrorOnFailure(t *testing.T) {
 	require.Len(t, inner.seen, 1, "inner must be called exactly once when maxAttempts=1")
 }
 
+// TestPublish_InjectsTraceparentExtension verifies that a trace context
+// carried on ctx is propagated to the published CloudEvent as the
+// "traceparent" extension (W3C Trace Context, CloudEvents Distributed
+// Tracing Extension).
+func TestPublish_InjectsTraceparentExtension(t *testing.T) {
+	inner := &captureInner{}
+	p := newTestPublisher(inner, 1)
+
+	tc := trace.New()
+	ctx := trace.NewContext(context.Background(), tc)
+	e := event.Event{Type: event.EntryUpserted, TransactionId: tc.TraceID, Timestamp: time.Now(), Payload: json.RawMessage(`{"Key":"a/b"}`)}
+
+	require.NoError(t, p.Publish(ctx, e))
+	require.Len(t, inner.seen, 1)
+	require.Equal(t, tc.Traceparent(), inner.seen[0].Extensions()["traceparent"])
+}
+
+// TestPublish_NoTraceNoExtension verifies that without a trace context on
+// ctx, the published CloudEvent carries no "traceparent" extension.
+func TestPublish_NoTraceNoExtension(t *testing.T) {
+	inner := &captureInner{}
+	p := newTestPublisher(inner, 1)
+
+	e := event.Event{Type: event.EntryUpserted, Timestamp: time.Now(), Payload: json.RawMessage(`{"Key":"a/b"}`)}
+	require.NoError(t, p.Publish(context.Background(), e))
+	require.Len(t, inner.seen, 1)
+	require.NotContains(t, inner.seen[0].Extensions(), "traceparent")
+}
+
 func newTestPublisher(inner innerPublisher, maxAttempts int) *Publisher {
 	return &Publisher{
 		inner:          inner,
@@ -208,7 +238,7 @@ func newTestPublisher(inner innerPublisher, maxAttempts int) *Publisher {
 		maxAttempts:    maxAttempts,
 		initialBackoff: 1 * time.Millisecond,
 		maxBackoff:     5 * time.Millisecond,
-		logger:         zap.NewNop(),
+		logger:         slog.New(slog.DiscardHandler),
 	}
 }
 
@@ -218,9 +248,9 @@ func newTestPublisher(inner innerPublisher, maxAttempts int) *Publisher {
 func TestPublisher_ExhaustedRetries_DoesNotLogPayload(t *testing.T) {
 	const secretMarker = "SUPER_SECRET_VALUE"
 
-	// Observer captures every zap log entry written during the test.
-	core, logs := observer.New(zap.ErrorLevel)
-	observedLogger := zap.New(core)
+	// Captures every log record written during the test as NDJSON.
+	var buf bytes.Buffer
+	observedLogger := slog.New(slog.NewJSONHandler(&buf, nil))
 
 	inner := &captureInner{err: errors.New("nats unavailable")}
 	p := &Publisher{
@@ -244,16 +274,9 @@ func TestPublisher_ExhaustedRetries_DoesNotLogPayload(t *testing.T) {
 	err := p.Publish(context.Background(), e)
 	require.Error(t, err, "expected an error when inner publisher always fails")
 
-	require.NotEmpty(t, logs.All(), "expected at least one log entry to be captured")
+	require.NotEmpty(t, buf.String(), "expected at least one log entry to be captured")
 
-	// Assert that the secret marker does not appear in any logged field or message.
-	for _, entry := range logs.All() {
-		require.NotContains(t, entry.Message, secretMarker,
-			"secret marker must not appear in log message")
-		for _, f := range entry.Context {
-			strVal := f.String
-			require.NotContains(t, strVal, secretMarker,
-				"secret marker must not appear in log field %q", f.Key)
-		}
-	}
+	// Assert that the secret marker does not appear in the captured log output.
+	require.NotContains(t, buf.String(), secretMarker,
+		"secret marker must not appear in log output")
 }

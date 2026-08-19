@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/norlis/httpgate/logging"
+	"github.com/norlis/httpgate/trace"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -16,6 +18,7 @@ import (
 	"nbox/internal/auth"
 	"nbox/internal/auth/approle"
 	"nbox/internal/auth/awssts"
+	"nbox/internal/logfields"
 )
 
 const authMetadataKey = "authorization"
@@ -92,7 +95,7 @@ func (i *AuthInterceptor) authenticate(ctx context.Context, fullMethod string) (
 	sourceIP := peerIP(ctx)
 
 	if i.disabled {
-		i.audit("auth attempted while disabled", "", "", sourceIP, fullMethod, nil)
+		i.audit(ctx, "auth attempted while disabled", "", "", sourceIP, fullMethod, nil)
 		return nil, status.Error(codes.Unavailable, "approle auth is disabled")
 	}
 
@@ -127,11 +130,11 @@ func (i *AuthInterceptor) authenticate(ctx context.Context, fullMethod string) (
 	identity, err := authenticator.Authenticate(authCtx, credentialBytes)
 	if err != nil {
 		roleID := peekRoleID(credentialBytes)
-		i.audit("auth failed", roleID, scheme, sourceIP, fullMethod, err)
+		i.audit(ctx, "auth failed", roleID, scheme, sourceIP, fullMethod, err)
 		return nil, classifyAuthError(err)
 	}
 
-	i.audit("auth success", identity.Subject, scheme, sourceIP, fullMethod, nil)
+	i.audit(ctx, "auth success", identity.Subject, scheme, sourceIP, fullMethod, nil)
 
 	token, err := auth.MintM2MJWT(identity, i.hmacKey)
 	if err != nil {
@@ -140,7 +143,20 @@ func (i *AuthInterceptor) authenticate(ctx context.Context, fullMethod string) (
 
 	newCtx := auth.WithIdentity(ctx, identity)
 	newCtx = auth.WithM2MToken(newCtx, token)
+	newCtx = trace.NewContext(newCtx, traceContextFromMD(md))
 	return newCtx, nil
+}
+
+// traceContextFromMD resolves the stream's trace: inherit trace_id from a
+// valid inbound traceparent (fresh local span), else start a new trace —
+// the Watch RPC is an entry point (§2.3).
+func traceContextFromMD(md metadata.MD) trace.Context {
+	if vals := md.Get(trace.Header); len(vals) > 0 {
+		if tc, err := trace.Parse(vals[0]); err == nil {
+			return trace.Context{TraceID: tc.TraceID, SpanID: trace.NewSpanID()}
+		}
+	}
+	return trace.New()
 }
 
 // parseAuthHeader splits "Scheme <value>" → ("Scheme", "<value>", true).
@@ -228,12 +244,12 @@ func errKind(err error) string {
 }
 
 // audit emits a structured log entry. NEVER logs secret_id.
-func (i *AuthInterceptor) audit(msg, roleID, scheme, sourceIP, method string, err error) {
+func (i *AuthInterceptor) audit(ctx context.Context, msg, roleID, scheme, sourceIP, method string, err error) {
 	attrs := []any{
-		slog.String("role_id", roleID),
+		slog.String(logfields.KeyAppRoleID, roleID),
 		slog.String("scheme", scheme),
-		slog.String("source_ip", sourceIP),
-		slog.String("rpc_method", method),
+		slog.String(logfields.KeySourceIP, sourceIP),
+		slog.String(logfields.KeyRPCMethod, method),
 		slog.Bool("success", err == nil),
 	}
 	if err != nil {
@@ -242,8 +258,8 @@ func (i *AuthInterceptor) audit(msg, roleID, scheme, sourceIP, method string, er
 		// sentinels + STS reasons — they never contain the secret_id.
 		attrs = append(attrs,
 			slog.String("error_kind", errKind(err)),
-			slog.String("error", err.Error()),
+			logging.Err(err),
 		)
 	}
-	i.logger.Info(msg, attrs...)
+	i.logger.InfoContext(ctx, msg, attrs...)
 }
