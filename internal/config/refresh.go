@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"sync/atomic"
 	"time"
+
+	"github.com/norlis/httpgate/logging"
 )
 
 // Snapshot holds an immutable parsed value (T) behind an atomic pointer,
@@ -56,9 +58,9 @@ func (s *Snapshot[T]) Run(ctx context.Context) {
 			return
 		case <-t.C:
 			if err := s.refresh(ctx); err != nil {
-				s.logger.Error("config refresh failed, serving stale",
+				s.logger.ErrorContext(ctx, "config refresh failed, serving stale",
 					slog.String("kind", s.key.Kind),
-					slog.String("error", err.Error()))
+					logging.Err(err))
 			}
 		}
 	}
@@ -84,7 +86,7 @@ func (s *Snapshot[T]) refresh(ctx context.Context) error {
 	}
 	s.current.Store(&val)
 	s.lastHash.Store(h)
-	s.logger.Info("config refreshed", slog.String("kind", s.key.Kind))
+	s.logger.InfoContext(ctx, "config refreshed", slog.String("kind", s.key.Kind))
 	return nil
 }
 

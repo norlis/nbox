@@ -3,10 +3,11 @@ package spec
 import (
 	"context"
 	"io/fs"
+	"log/slog"
 	"os"
 
+	"github.com/norlis/httpgate/logging"
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 	"nbox/assets/specs"
 	"nbox/internal/nbox"
 )
@@ -52,7 +53,7 @@ func ProvideLayeredFS(p LayeredFSParams) fs.FS {
 type FSStoreParams struct {
 	fx.In
 	FileSystem fs.FS
-	Logger     *zap.Logger
+	Logger     *slog.Logger
 }
 
 // ProvideFSStore creates the FSStore with DI.
@@ -77,22 +78,20 @@ type LifecycleParams struct {
 	fx.In
 	Lifecycle fx.Lifecycle
 	Registry  *SpecRegistry
-	Logger    *zap.Logger
+	Logger    *slog.Logger
 }
 
 // RegisterLifecycle registers startup/shutdown hooks.
 func RegisterLifecycle(p LifecycleParams) {
 	p.Lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			p.Logger.Info("Loading boxspec definitions...")
 			if err := p.Registry.Reload(ctx); err != nil {
-				p.Logger.Warn("Failed to load boxspec definitions", zap.Error(err))
+				p.Logger.ErrorContext(ctx, "boxspec load failed", logging.Err(err))
 			}
-			p.Logger.Info("BoxSpec ready", zap.Int("specs_loaded", len(p.Registry.List())))
 			return nil
 		},
 		OnStop: func(_ context.Context) error {
-			p.Logger.Info("BoxSpec shutdown")
+			p.Logger.Info("boxspec shutdown")
 			return nil
 		},
 	})

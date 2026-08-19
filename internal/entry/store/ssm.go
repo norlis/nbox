@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -11,9 +12,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	eventdrivenaws "github.com/norlis/event-driven/pkg/transport/aws"
-	"go.uber.org/zap"
+	"github.com/norlis/httpgate/logging"
 	"nbox/internal/application"
 	"nbox/internal/entry"
+	"nbox/internal/logfields"
 	"nbox/internal/nbox"
 	"nbox/internal/prefix"
 	"nbox/pkg/resiliency"
@@ -30,7 +32,7 @@ const (
 type SSM struct {
 	client      *ssm.Client
 	pathUseCase *entry.Processor
-	logger      *zap.Logger
+	logger      *slog.Logger
 	config      *nbox.Config
 	identity    *eventdrivenaws.Identity
 	guard       *resiliency.Guard
@@ -39,7 +41,7 @@ type SSM struct {
 func NewSSM(
 	client *ssm.Client,
 	pathUseCase *entry.Processor,
-	logger *zap.Logger,
+	logger *slog.Logger,
 	config *nbox.Config,
 	identity *eventdrivenaws.Identity,
 ) *SSM {
@@ -94,15 +96,23 @@ func (p *SSM) Upsert(ctx context.Context, entries []entry.Entry) entry.Results {
 
 	results := make(entry.Results)
 
+	var failed int
 	for res := range ch {
 		if res.Err != nil {
-			p.logger.Error("ErrSecureUpsert",
-				zap.String("key", res.Key),
-				zap.Error(res.Err),
+			failed++
+			p.logger.DebugContext(ctx, "secure upsert item failed",
+				slog.String(logfields.KeyNboxKey, res.Key),
+				logging.Err(res.Err),
 			)
 		}
 
 		results.AddWithOutput(res.Key, res.Action, res.Err, res.Output)
+	}
+
+	if failed > 0 {
+		p.logger.InfoContext(ctx, "secure upsert completed with failures",
+			slog.Int(logfields.KeyEntriesTotal, len(entries)),
+			slog.Int(logfields.KeyEntriesFailed, failed))
 	}
 
 	return results
@@ -262,8 +272,8 @@ func (p *SSM) addTags(ctx context.Context, key *string, _ entry.Entry) {
 		},
 	})
 	if err != nil {
-		p.logger.Warn("Failed to add tags to parameter",
-			zap.String("key", *key),
-			zap.Error(err))
+		p.logger.WarnContext(ctx, "parameter tagging failed",
+			slog.String(logfields.KeyNboxKey, *key),
+			logging.Err(err))
 	}
 }

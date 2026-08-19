@@ -55,11 +55,14 @@ type Params struct {
 // maxRequestBodyBytes caps incoming request bodies to 1 MiB.
 const maxRequestBodyBytes = 1 << 20
 
+// transactionIDHeader echoes the W3C trace_id so existing correlation
+// consumers keep a response-side id after the x-transaction-id removal.
+const transactionIDHeader = "x-transaction-id"
+
 func NewServer(params Params) {
 	base := []middleware.Middleware{
-		middleware.TraceID(
-			middleware.WithHeaderName("x-transaction-id"),
-			middleware.WithLogger(params.Slog),
+		middleware.TraceContext(
+			middleware.WithResponseHeader(transactionIDHeader),
 		),
 		middleware.InterceptStatus(
 			middleware.WithIntercept(http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusInternalServerError),

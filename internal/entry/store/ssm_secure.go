@@ -2,8 +2,8 @@ package store
 
 import (
 	"context"
+	"log/slog"
 
-	"go.uber.org/zap"
 	"nbox/internal/entry"
 	"nbox/internal/prefix"
 )
@@ -12,13 +12,13 @@ import (
 // operaciones. Está pensado para prefijos vault donde toda escritura debe
 // ir cifrada con KMS.
 type SSMSecure struct {
-	logger *zap.Logger
+	logger *slog.Logger
 	base   *SSM
 }
 
 func NewSSMSecure(
 	base *SSM,
-	logger *zap.Logger,
+	logger *slog.Logger,
 ) *SSMSecure {
 	return &SSMSecure{
 		base:   base,

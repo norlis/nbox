@@ -3,13 +3,15 @@ package aws
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/cenkalti/backoff/v4"
-	"go.uber.org/zap"
+	"github.com/norlis/httpgate/logging"
+	"nbox/internal/logfields"
 	"nbox/pkg/resiliency"
 )
 
@@ -21,11 +23,11 @@ const (
 // DynamoDBKit agrupa helpers comunes para operaciones batch en DynamoDB.
 type DynamoDBKit struct {
 	client *dynamodb.Client
-	logger *zap.Logger
+	logger *slog.Logger
 	guard  *resiliency.Guard
 }
 
-func NewDynamoDBKit(client *dynamodb.Client, logger *zap.Logger) *DynamoDBKit {
+func NewDynamoDBKit(client *dynamodb.Client, logger *slog.Logger) *DynamoDBKit {
 	guard := resiliency.NewGuard(resiliency.GuardConfig{
 		MaxConcurrency:           50, // High concurrency allowed for reads
 		MaxRetries:               3,
@@ -80,12 +82,12 @@ func (k *DynamoDBKit) BatchWrite(ctx context.Context, tableName string, requests
 
 		// If items remain after all retries, add them to the final failure list
 		if err != nil || len(unprocessed) > 0 {
-			k.logger.Warn("BatchWriteItem partial failure after retries",
-				zap.String("table", tableName),
-				zap.Int("original_count", len(chunk)),
-				zap.Int("failed_count", len(unprocessed)),
-				zap.Duration("elapsed", time.Since(startTime)),
-				zap.Error(err))
+			k.logger.ErrorContext(ctx, "batch write partially failed",
+				slog.String("table", tableName),
+				slog.Int(logfields.KeyEntriesTotal, len(chunk)),
+				slog.Int(logfields.KeyEntriesFailed, len(unprocessed)),
+				slog.Duration("elapsed", time.Since(startTime)),
+				logging.Err(err))
 			totalFailed = append(totalFailed, unprocessed...)
 		}
 	}

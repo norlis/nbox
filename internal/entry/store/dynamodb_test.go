@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -10,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 	"nbox/internal/entry"
 	"nbox/internal/nbox"
 )
@@ -138,7 +138,7 @@ func newTestDynamoDB(items []fakeItem) (*DynamoDB, *fakeQueryClient) {
 	kit := &fakeBatchWriter{client: client}
 	proc := entry.NewProcessor()
 	cfg := &nbox.Config{EntryTableName: "test-table"}
-	logger, _ := zap.NewDevelopment()
+	logger := slog.New(slog.DiscardHandler)
 
 	db := &DynamoDB{
 		client:      client,

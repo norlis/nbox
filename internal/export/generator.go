@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/norlis/httpgate/logging"
 	"nbox/internal/entry"
 	"nbox/internal/export/exporter"
+	"nbox/internal/logfields"
 	"nbox/internal/nbox"
 )
 
@@ -17,14 +19,14 @@ import (
 type Generator struct {
 	entryAdapter entry.Manager
 	config       *nbox.Config
-	logger       *zap.Logger
+	logger       *slog.Logger
 	exporters    map[Format]exporter.Exporter
 }
 
 func NewGenerator(
 	entryAdapter entry.Manager,
 	config *nbox.Config,
-	logger *zap.Logger,
+	logger *slog.Logger,
 ) *Generator {
 	g := &Generator{
 		entryAdapter: entryAdapter,
@@ -42,10 +44,7 @@ func NewGenerator(
 }
 
 func (g *Generator) Export(ctx context.Context, opts Options) (*Result, error) {
-	g.logger.Info("Starting export",
-		zap.String("prefix", opts.Prefix),
-		zap.String("format", string(opts.Format)),
-	)
+	start := time.Now()
 
 	if err := opts.Validate(); err != nil {
 		return nil, fmt.Errorf("failed to validate export options: %w", err)
@@ -53,12 +52,12 @@ func (g *Generator) Export(ctx context.Context, opts Options) (*Result, error) {
 
 	entries, err := g.entryAdapter.List(ctx, opts.Prefix)
 	if err != nil {
-		g.logger.Error("Failed to list entries", zap.Error(err))
+		g.logger.ErrorContext(ctx, "export failed", logging.Err(err))
 		return nil, fmt.Errorf("failed to list entries: %w", err)
 	}
 
 	if len(entries) == 0 {
-		g.logger.Warn("No entries found for export", zap.String("prefix", opts.Prefix))
+		g.logger.InfoContext(ctx, "export returned no entries", slog.String(logfields.KeyNboxPrefix, opts.Prefix))
 		return nil, fmt.Errorf("%w: %s", entry.ErrEntryNotFound, opts.Prefix)
 	}
 
@@ -69,7 +68,7 @@ func (g *Generator) Export(ctx context.Context, opts Options) (*Result, error) {
 
 	content, err := ex.Export(entries)
 	if err != nil {
-		g.logger.Error("Export failed", zap.Error(err))
+		g.logger.ErrorContext(ctx, "export failed", logging.Err(err))
 		return nil, fmt.Errorf("export failed: %w", err)
 	}
 
@@ -82,10 +81,12 @@ func (g *Generator) Export(ctx context.Context, opts Options) (*Result, error) {
 		Size:    int64(len(content)),
 	}
 
-	g.logger.Info("Export completed successfully",
-		zap.Int("entries_count", len(entries)),
-		zap.Int64("size_bytes", result.Size),
-		zap.String("checksum", checksum),
+	g.logger.InfoContext(ctx, "export completed",
+		slog.String(logfields.KeyNboxFormat, string(opts.Format)),
+		slog.Int(logfields.KeyEntriesTotal, len(entries)),
+		slog.Int64(logging.KeyEventDuration, time.Since(start).Nanoseconds()),
+		slog.Int64("size_bytes", result.Size),
+		slog.String("checksum", checksum),
 	)
 
 	return result, nil

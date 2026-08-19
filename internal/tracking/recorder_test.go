@@ -1,20 +1,21 @@
 package tracking
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest/observer"
 	"nbox/internal/entry"
 	"nbox/internal/event"
 	"nbox/internal/prefix"
+	"nbox/pkg/logger"
 )
 
 // --- minimal fakes -------------------------------------------------------
@@ -52,20 +53,65 @@ type fakePublisher struct{}
 
 func (f *fakePublisher) Publish(_ context.Context, _ ...event.Event) error { return nil }
 
-// --- helper: build a *Recorder with an observer logger ------------------
+// syncBuffer is a concurrency-safe io.Writer/Reader wrapper around
+// bytes.Buffer, needed because the async logger under test writes from
+// goroutines while the test polls the buffer's contents.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
 
-func newTestRecorder(t *testing.T) (*Recorder, *observer.ObservedLogs) {
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// logLine is a single NDJSON log record, decoded loosely for assertions.
+type logLine struct {
+	Message string `json:"message"`
+	Level   string `json:"log.level"`
+	Task    string `json:"task"`
+}
+
+// linesWithMessage decodes every NDJSON line in buf matching msg.
+func linesWithMessage(buf *syncBuffer, msg string) []logLine {
+	var out []logLine
+	for _, raw := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		if raw == "" {
+			continue
+		}
+		var l logLine
+		if err := json.Unmarshal([]byte(raw), &l); err != nil {
+			continue
+		}
+		if l.Message == msg {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// --- helper: build a *Recorder with a buffered slog logger --------------
+
+func newTestRecorder(t *testing.T) (*Recorder, *syncBuffer) {
 	t.Helper()
-	core, logs := observer.New(zapcore.DebugLevel)
-	logger := zap.New(core)
+	buf := &syncBuffer{}
+	log := logger.NewWithWriter(buf, logger.Config{Level: "debug"}, "nbox-test", "test")
 
 	r := &Recorder{
 		base:      &fakeManager{},
 		tracker:   &fakeStore{},
 		publisher: &fakePublisher{},
-		logger:    logger,
+		logger:    log,
 	}
-	return r, logs
+	return r, buf
 }
 
 // --- tests for async helper ----------------------------------------------
@@ -85,22 +131,22 @@ func TestAsync_NormalFnRunsToCompletion(t *testing.T) {
 
 // TestAsync_PanicFnDoesNotCrashAndIsLogged verifies panic recovery and logging.
 func TestAsync_PanicFnDoesNotCrashAndIsLogged(t *testing.T) {
-	r, logs := newTestRecorder(t)
+	r, buf := newTestRecorder(t)
 
 	r.async(context.Background(), "test.panic", func(_ context.Context) {
 		panic("deliberate test panic")
 	})
 
 	// The recover+log runs in the helper's OUTER deferred func, which executes
-	// after fn fully unwinds. Poll the observer until it lands rather than racing
+	// after fn fully unwinds. Poll the buffer until it lands rather than racing
 	// on a done-signal closed from inside fn (which fires before the recover).
 	require.Eventually(t, func() bool {
-		return logs.FilterMessage("async task panicked").Len() == 1
+		return len(linesWithMessage(buf, "async task panicked")) == 1
 	}, time.Second, time.Millisecond, "expected exactly one 'async task panicked' log entry")
 
-	entries := logs.FilterMessage("async task panicked").All()
-	assert.Equal(t, zapcore.ErrorLevel, entries[0].Level)
-	assert.Equal(t, "test.panic", entries[0].ContextMap()["task"])
+	entries := linesWithMessage(buf, "async task panicked")
+	assert.Equal(t, "error", entries[0].Level)
+	assert.Equal(t, "test.panic", entries[0].Task)
 }
 
 // TestAsync_CtxPassedToFnHasDeadline verifies the helper injects a deadline.
@@ -134,7 +180,7 @@ func TestAsync_CtxPassedToFnHasDeadline(t *testing.T) {
 // independently recovered and logged. Asserts via polling because each
 // recover+log lands in the helper's deferred func after its fn unwinds.
 func TestAsync_MultiplePanicsAreEachLogged(t *testing.T) {
-	r, logs := newTestRecorder(t)
+	r, buf := newTestRecorder(t)
 
 	const count = 3
 	for range count {
@@ -144,7 +190,7 @@ func TestAsync_MultiplePanicsAreEachLogged(t *testing.T) {
 	}
 
 	require.Eventually(t, func() bool {
-		return logs.FilterMessage("async task panicked").Len() == count
+		return len(linesWithMessage(buf, "async task panicked")) == count
 	}, time.Second, time.Millisecond, "expected each panic to be recovered and logged")
 }
 

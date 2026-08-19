@@ -21,6 +21,25 @@ func isCredentialError(err error) bool {
 	return errors.Is(err, ErrInvalidAuthHeaderFormat) || errors.Is(err, ErrInvalidCredentials)
 }
 
+// isClientAuthError reports whether err is one of the known client-input
+// sentinels (bad/missing/expired header, credentials, token). Anything else —
+// e.g. a store/backend error wrapped by tryBasicAuth/tryJwt — is a service
+// fault and must be logged at ERROR, not WARN.
+func isClientAuthError(err error) bool {
+	switch {
+	case errors.Is(err, ErrMissingAuthHeader),
+		errors.Is(err, ErrUnsupportedAuthScheme),
+		errors.Is(err, ErrInvalidAuthHeaderFormat),
+		errors.Is(err, ErrTokenInvalid),
+		errors.Is(err, ErrTokenExpired),
+		errors.Is(err, ErrTokenClaimInvalid),
+		errors.Is(err, ErrInvalidCredentials):
+		return true
+	default:
+		return false
+	}
+}
+
 // extractAuthValue checks an authentication scheme and extracts its value.
 // Returns the value and true if the scheme matches.
 // Example: extractAuthValue("Bearer my-token", "Bearer") -> ("my-token", true).

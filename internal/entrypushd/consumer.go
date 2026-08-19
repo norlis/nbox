@@ -3,13 +3,17 @@ package entrypushd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/norlis/httpgate/logging"
 
 	eventd "github.com/norlis/event-driven/pkg/event"
 	"github.com/norlis/event-driven/pkg/eventmux"
 	"go.uber.org/fx"
 	"nbox/internal/entrypushd/handler"
+	"nbox/internal/logfields"
 )
 
 const consumerStopTimeout = 30 * time.Second
@@ -38,9 +42,9 @@ func StartConsumer(
 				err := sub.Start(runCtx, func(msg *eventd.Message) {
 					defer func() {
 						if r := recover(); r != nil {
-							logger.Error("handler panic recovered",
-								slog.Any("panic", r),
-								slog.String("msg_id", msg.ID()),
+							logger.ErrorContext(msg.Context(), "handler panic recovered",
+								logging.Err(fmt.Errorf("panic: %v", r)),
+								slog.String(logfields.KeyEventID, msg.ID()),
 							)
 							msg.Nack()
 							return
@@ -50,7 +54,7 @@ func StartConsumer(
 					msg.Ack()
 				})
 				if err != nil && !errors.Is(err, context.Canceled) {
-					logger.Error("subscription stopped with error", slog.Any("error", err))
+					logger.Error("subscription stopped with error", logging.Err(err))
 					_ = sd.Shutdown(fx.ExitCode(1))
 				}
 			}()

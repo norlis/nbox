@@ -2,21 +2,22 @@ package export
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
+	"github.com/norlis/httpgate/logging"
 	"github.com/norlis/httpgate/presenter"
-	"go.uber.org/zap"
 	"nbox/internal/transport/httpx"
 )
 
 type Handler struct {
 	generator *Generator
 	render    *httpx.Render
-	logger    *zap.Logger
+	logger    *slog.Logger
 }
 
-func NewHandler(generator *Generator, render *httpx.Render, logger *zap.Logger) *Handler {
+func NewHandler(generator *Generator, render *httpx.Render, logger *slog.Logger) *Handler {
 	return &Handler{generator: generator, render: render, logger: logger}
 }
 
@@ -51,7 +52,7 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request) {
 
 	prefix := r.URL.Query().Get("prefix")
 	if prefix == "" {
-		h.logger.Warn("Export request without prefix")
+		h.logger.WarnContext(ctx, "export request rejected", slog.String("validation.reason", "missing prefix"))
 		h.render.Error(w, r, errors.New("prefix parameter is required"), presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
@@ -68,11 +69,6 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.generator.Export(ctx, opts)
 	if err != nil {
-		h.logger.Error("Export failed",
-			zap.Error(err),
-			zap.String("prefix", prefix),
-			zap.String("format", formatStr),
-		)
 		h.render.Error(w, r, err, presenter.WithStatus(http.StatusBadRequest))
 		return
 	}
@@ -87,13 +83,6 @@ func (h *Handler) Export(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(result.Content); err != nil { //nolint:gosec // G705: Content-Type is a non-HTML export format and X-Content-Type-Options:nosniff is set; this is API data, not a web page
-		h.logger.Error("Failed to write response", zap.Error(err))
+		h.logger.ErrorContext(ctx, "export response write failed", logging.Err(err))
 	}
-
-	h.logger.Info("Export completed",
-		zap.String("prefix", prefix),
-		zap.String("format", formatStr),
-		zap.Int("entries", len(result.Entries)),
-		zap.Int64("size", result.Size),
-	)
 }

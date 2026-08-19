@@ -9,11 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/norlis/httpgate/authz/opa"
-	"github.com/norlis/httpgate/health"
-	"github.com/norlis/httpgate/server"
-	"go.uber.org/fx"
-	"go.uber.org/zap"
 	auth "nbox/internal/auth"
 	"nbox/internal/box"
 	"nbox/internal/entry"
@@ -25,6 +20,13 @@ import (
 	"nbox/internal/tracking"
 	authmw "nbox/internal/transport/http/middleware"
 	"nbox/internal/transport/httpx"
+
+	logfields2 "github.com/norlis/event-driven/pkg/kit/logfields"
+	"github.com/norlis/httpgate/authz/opa"
+	"github.com/norlis/httpgate/health"
+	"github.com/norlis/httpgate/logging"
+	"github.com/norlis/httpgate/server"
+	"go.uber.org/fx"
 )
 
 var Module = fx.Module("transport.http",
@@ -34,7 +36,7 @@ var Module = fx.Module("transport.http",
 	fx.Provide(NewServeMux),
 	fx.Invoke(NewServer),
 
-	fx.Provide(func(config *nbox.Config, render *httpx.Render, logger *zap.Logger, repo auth.Store) *authmw.Authn {
+	fx.Provide(func(config *nbox.Config, render *httpx.Render, logger *slog.Logger, repo auth.Store) *authmw.Authn {
 		return authmw.NewAuthn(config, render, logger, repo)
 	}),
 
@@ -84,7 +86,7 @@ type ServerConfig struct {
 	Port    string
 }
 
-func NewServeMux(lc fx.Lifecycle, logger *zap.Logger, ready *health.Readiness, scfg ServerConfig) *http.ServeMux {
+func NewServeMux(lc fx.Lifecycle, logger *slog.Logger, ready *health.Readiness, scfg ServerConfig) *http.ServeMux {
 	mux := http.NewServeMux()
 	addr := net.JoinHostPort(scfg.Address, scfg.Port)
 
@@ -92,24 +94,26 @@ func NewServeMux(lc fx.Lifecycle, logger *zap.Logger, ready *health.Readiness, s
 
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			logger.Info("ListenAndServe", zap.String("addr", addr))
+			// httpgate's own "server listening" log only fires via server.Run(); this
+			// hook calls ListenAndServe directly, so we log the bound address ourselves.
+			logger.Info("server listening", slog.String(logfields2.KeyServerAddress, addr))
 			go func() {
 				if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					logger.Error("http serve error", zap.Error(err))
+					logger.ErrorContext(ctx, "http serve error", logging.Err(err))
 				}
 			}()
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			logger.Info("Deteniendo servidor HTTP...")
+			logger.InfoContext(ctx, "server draining")
 			ready.MarkDraining()
 			shutdownCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 			defer cancel()
 			if err := srv.Shutdown(shutdownCtx); err != nil {
-				logger.Error("shutdown error", zap.Error(err))
+				logger.ErrorContext(ctx, "shutdown error", logging.Err(err))
 				return fmt.Errorf("failed to shutdown HTTP server: %w", err)
 			}
-			logger.Info("Servidor HTTP detenido correctamente.")
+			logger.InfoContext(ctx, "server stopped")
 			return nil
 		},
 	})

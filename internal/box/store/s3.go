@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"path"
 	"path/filepath"
 	"sort"
@@ -15,10 +16,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"go.uber.org/zap"
+	"github.com/norlis/httpgate/logging"
 	"nbox/internal/application"
 	"nbox/internal/box"
 	"nbox/internal/box/store/spec"
+	"nbox/internal/logfields"
 	"nbox/internal/nbox"
 )
 
@@ -27,7 +29,7 @@ type S3 struct {
 	s3             *s3.Client
 	dynamodbClient *dynamodb.Client
 	config         *nbox.Config
-	logger         *zap.Logger
+	logger         *slog.Logger
 	resolver       *box.StrategyResolver
 	registry       *spec.SpecRegistry
 }
@@ -43,7 +45,7 @@ func NewS3(
 	s3Client *s3.Client,
 	config *nbox.Config,
 	dynamodbClient *dynamodb.Client,
-	logger *zap.Logger,
+	logger *slog.Logger,
 	resolver *box.StrategyResolver,
 	registry *spec.SpecRegistry,
 ) box.Store {
@@ -60,7 +62,6 @@ func NewS3(
 func (b *S3) store(ctx context.Context, objectPath string, stage box.Stage) (*s3.PutObjectOutput, string, spec.Result, error) {
 	content, hash, err := b.resolver.Process(stage.Template.Name, stage.Template.Value)
 	if err != nil {
-		b.logger.Error("TemplateProcessingFailed", zap.String("path", objectPath), zap.Error(err))
 		return nil, "", spec.NewResult(spec.WithSyntaxError(err)), fmt.Errorf("TemplateProcessingFailed: %w", err)
 	}
 
@@ -69,14 +70,13 @@ func (b *S3) store(ctx context.Context, objectPath string, stage box.Stage) (*s3
 	// Validamos contra el registro. Si no hay spec que coincida, ValidateByFilename retorna Valid=true (ignora)
 	result, err := b.registry.ValidateByFilename(ctx, stage.Template.Name, content, format)
 	if err != nil {
-		b.logger.Error("SpecValidationEngineError", zap.String("path", objectPath), zap.Error(err))
 		return nil, "", spec.NewResult(spec.WithInternalError(err)), fmt.Errorf("validation engine failed: %w", err)
 	}
 
 	if !result.Valid {
-		b.logger.Warn("TemplateValidationFailed",
-			zap.String("path", objectPath),
-			zap.Any("errors", result.Errors),
+		b.logger.WarnContext(ctx, "template validation failed",
+			slog.String(logfields.KeyNboxTemplate, objectPath),
+			slog.Any("errors", result.Errors),
 		)
 
 		var msgs []string
@@ -147,7 +147,17 @@ func (b *S3) UpsertBox(ctx context.Context, bx *box.Box) map[string]spec.Result 
 		s3Result, hash, validResult, err := b.store(ctx, s3path, stage)
 		result[s3path] = validResult
 		if err != nil {
-			b.logger.Error("ErrStoreTemplate", zap.String("path", s3path), zap.Error(err))
+			// Schema errors (user input) are already WARN-logged in store(); anything
+			// else here is a genuine internal/engine fault that never reaches the
+			// presenter as a log (it's only serialized as HTTP 400/500 JSON).
+			if validResult.Kind != spec.KindSchemaError {
+				b.logger.ErrorContext(ctx, "template processing failed",
+					slog.String(logfields.KeyNboxService, bx.Service),
+					slog.String(logfields.KeyNboxStage, stageName),
+					slog.String(logfields.KeyNboxTemplate, s3path),
+					logging.Err(err),
+				)
+			}
 			continue
 		}
 
@@ -180,7 +190,10 @@ func (b *S3) UpsertBox(ctx context.Context, bx *box.Box) map[string]spec.Result 
 			TableName: new(b.config.BoxTableName), Item: item,
 		})
 		if err != nil {
-			b.logger.Warn("ErrDbStoreTemplate", zap.String("path", s3path), zap.Error(err))
+			b.logger.ErrorContext(ctx, "template store write failed",
+				slog.String(logfields.KeyNboxTemplate, s3path),
+				logging.Err(err),
+			)
 		}
 	}
 	return result

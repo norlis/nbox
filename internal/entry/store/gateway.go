@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/norlis/httpgate/logging"
 	"nbox/internal/entry"
+	"nbox/internal/logfields"
 	"nbox/internal/prefix"
 )
 
@@ -20,13 +22,13 @@ type Gateway struct {
 	backends   map[prefix.StorageBackendType]entry.PartialStore
 	index      entry.Store
 	prefixRepo prefix.Store
-	logger     *zap.Logger
+	logger     *slog.Logger
 }
 
 func NewGateway(
 	index entry.Store,
 	prefixRepo prefix.Store,
-	logger *zap.Logger,
+	logger *slog.Logger,
 ) entry.Manager {
 	return &Gateway{
 		backends:   make(map[prefix.StorageBackendType]entry.PartialStore),
@@ -102,9 +104,11 @@ func (g *Gateway) Resolve(ctx context.Context, key string) (*entry.Entry, error)
 
 	store, ok := g.backends[backendType]
 	if !ok {
-		g.logger.Error("Critical: Index points to unknown backend",
-			zap.String("key", key),
-			zap.String("backend", string(backendType)))
+		// Index integrity fault: a caller-side status remap (e.g. 400 on any
+		// store error) means this is the only place this ever gets logged.
+		g.logger.ErrorContext(ctx, "backend not registered",
+			slog.String(logfields.KeyNboxKey, key),
+			slog.String(logfields.KeyNboxBackend, string(backendType)))
 		return nil, fmt.Errorf("backend not registered: %s", backendType)
 	}
 
@@ -131,9 +135,9 @@ func (g *Gateway) Delete(ctx context.Context, key string) error {
 
 	if store != g.index {
 		if err := g.index.Delete(ctx, key); err != nil {
-			g.logger.Error("index delete failed after backend delete; possible split-brain, manual reconcile required",
-				zap.String("key", key),
-				zap.Error(err),
+			g.logger.ErrorContext(ctx, "index delete failed after backend delete",
+				slog.String(logfields.KeyNboxKey, key),
+				logging.Err(err),
 			)
 		}
 	}
@@ -210,7 +214,7 @@ func (g *Gateway) Upsert(ctx context.Context, entries []entry.Entry) entry.Resul
 		for key, res := range idxResults {
 			if res.Err != nil {
 				if existingRes, exists := results[key]; exists && existingRes.Err == nil {
-					g.logger.Warn("Data saved in backend but failed to index", zap.String("key", key), zap.Error(res.Err))
+					g.logger.ErrorContext(ctx, "index write failed after backend write", slog.String(logfields.KeyNboxKey, key), logging.Err(res.Err))
 				} else {
 					results[key] = res
 				}

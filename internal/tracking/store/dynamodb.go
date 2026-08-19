@@ -3,13 +3,15 @@ package store
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"go.uber.org/zap"
+	"github.com/norlis/httpgate/logging"
+	"nbox/internal/logfields"
 	"nbox/internal/nbox"
 	platformaws "nbox/internal/platform/aws"
 	"nbox/internal/tracking"
@@ -20,14 +22,14 @@ type DynamoDB struct {
 	client      *dynamodb.Client
 	tableName   string
 	dynamodbKit *platformaws.DynamoDBKit
-	logger      *zap.Logger
+	logger      *slog.Logger
 }
 
 func NewDynamoDB(
 	client *dynamodb.Client,
 	config *nbox.Config,
 	dynamodbKit *platformaws.DynamoDBKit,
-	logger *zap.Logger,
+	logger *slog.Logger,
 ) tracking.Store {
 	return &DynamoDB{
 		client:      client,
@@ -47,7 +49,7 @@ func (d *DynamoDB) CreateBatch(ctx context.Context, tracks []tracking.Record) er
 	for _, track := range tracks {
 		item, err := attributevalue.MarshalMap(track)
 		if err != nil {
-			d.logger.Error("Failed to marshal tracking", zap.String("key", track.Key), zap.Error(err))
+			d.logger.ErrorContext(ctx, "tracking record encode failed", slog.String(logfields.KeyNboxKey, track.Key), logging.Err(err))
 			continue
 		}
 
@@ -65,7 +67,7 @@ func (d *DynamoDB) CreateBatch(ctx context.Context, tracks []tracking.Record) er
 		return fmt.Errorf("tracking batch error: %w", err)
 	}
 	if len(failed) > 0 {
-		d.logger.Warn("Partial tracking failure", zap.Int("failed_count", len(failed)))
+		d.logger.WarnContext(ctx, "tracking partially failed", slog.Int(logfields.KeyEntriesFailed, len(failed)))
 	}
 
 	return nil
@@ -115,8 +117,7 @@ func (d *DynamoDB) History(ctx context.Context, key string, opts ...tracking.His
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			d.logger.Error("History query failed", zap.String("key", key), zap.Error(err))
-			return nil, err
+			return nil, fmt.Errorf("history query failed: %w", err)
 		}
 
 		var pageItems []tracking.Record
