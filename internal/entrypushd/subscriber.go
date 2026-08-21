@@ -5,9 +5,8 @@ import (
 	"log/slog"
 
 	natsgo "github.com/nats-io/nats.go"
-	logfields2 "github.com/norlis/event-driven/pkg/kit/logfields"
-
 	"github.com/norlis/event-driven/pkg/eventmux"
+	logfields2 "github.com/norlis/event-driven/pkg/kit/logfields"
 	"github.com/norlis/event-driven/pkg/transport/nats/core"
 )
 

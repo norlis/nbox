@@ -7,10 +7,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/norlis/httpgate/logging"
-
 	eventd "github.com/norlis/event-driven/pkg/event"
 	"github.com/norlis/event-driven/pkg/eventmux"
+	"github.com/norlis/httpgate/logging"
 	"go.uber.org/fx"
 	"nbox/internal/entrypushd/handler"
 	"nbox/internal/logfields"

@@ -83,7 +83,7 @@ type logLine struct {
 // linesWithMessage decodes every NDJSON line in buf matching msg.
 func linesWithMessage(buf *syncBuffer, msg string) []logLine {
 	var out []logLine
-	for _, raw := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+	for raw := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
 		if raw == "" {
 			continue
 		}
