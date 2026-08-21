@@ -9,6 +9,12 @@ import (
 	"net/http"
 	"time"
 
+	logfields2 "github.com/norlis/event-driven/pkg/kit/logfields"
+	"github.com/norlis/httpgate/authz/opa"
+	"github.com/norlis/httpgate/health"
+	"github.com/norlis/httpgate/logging"
+	"github.com/norlis/httpgate/server"
+	"go.uber.org/fx"
 	auth "nbox/internal/auth"
 	"nbox/internal/box"
 	"nbox/internal/entry"
@@ -20,13 +26,6 @@ import (
 	"nbox/internal/tracking"
 	authmw "nbox/internal/transport/http/middleware"
 	"nbox/internal/transport/httpx"
-
-	logfields2 "github.com/norlis/event-driven/pkg/kit/logfields"
-	"github.com/norlis/httpgate/authz/opa"
-	"github.com/norlis/httpgate/health"
-	"github.com/norlis/httpgate/logging"
-	"github.com/norlis/httpgate/server"
-	"go.uber.org/fx"
 )
 
 var Module = fx.Module("transport.http",
